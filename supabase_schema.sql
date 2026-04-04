@@ -166,7 +166,34 @@ CREATE TABLE IF NOT EXISTS staff (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Leave Requests
+-- Departments
+CREATE TABLE IF NOT EXISTS departments (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Designations
+CREATE TABLE IF NOT EXISTS designations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Staff Leave Requests
+CREATE TABLE IF NOT EXISTS staff_leave_requests (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  staff_id TEXT REFERENCES staff(staff_id),
+  staff_name TEXT,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  reason TEXT,
+  status TEXT DEFAULT 'Pending' CHECK (status IN ('Pending', 'Approved', 'Rejected')),
+  applied_date DATE DEFAULT CURRENT_DATE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Leave Requests (for Students)
 CREATE TABLE IF NOT EXISTS leave_requests (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   student_id TEXT REFERENCES students(student_id),
@@ -269,6 +296,48 @@ CREATE TABLE IF NOT EXISTS complaints (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Fee Types
+CREATE TABLE IF NOT EXISTS fee_types (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL UNIQUE,
+  description TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Fee Master
+CREATE TABLE IF NOT EXISTS fee_master (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  fee_type_id UUID REFERENCES fee_types(id) ON DELETE CASCADE,
+  class TEXT NOT NULL,
+  amount NUMERIC NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Fee Collections
+CREATE TABLE IF NOT EXISTS fee_collections (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  student_id TEXT REFERENCES students(student_id),
+  fee_master_id UUID REFERENCES fee_master(id),
+  month TEXT NOT NULL,
+  amount_paid NUMERIC NOT NULL,
+  discount NUMERIC DEFAULT 0,
+  scholarship NUMERIC DEFAULT 0,
+  payment_mode TEXT NOT NULL,
+  due_date DATE,
+  reference_note TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Contra Entries
+CREATE TABLE IF NOT EXISTS contra_entries (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  transaction_type TEXT NOT NULL CHECK (transaction_type IN ('Bank to Cash', 'Cash to Bank')),
+  amount NUMERIC NOT NULL,
+  reference_note TEXT,
+  date DATE DEFAULT CURRENT_DATE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Insert default settings if not exists
 INSERT INTO settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 
@@ -285,11 +354,18 @@ ALTER TABLE expense_heads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE incomes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE staff ENABLE ROW LEVEL SECURITY;
+ALTER TABLE departments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE designations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE staff_leave_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE leave_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sql_snippets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE enquiries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE visitors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE complaints ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fee_types ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fee_master ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fee_collections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE contra_entries ENABLE ROW LEVEL SECURITY;
 
 -- Helper function to check if user is authenticated
 -- (Note: In Supabase, auth.role() = 'authenticated' is standard)
@@ -404,6 +480,46 @@ CREATE POLICY "Allow authenticated insert" ON staff FOR INSERT WITH CHECK (true)
 CREATE POLICY "Allow authenticated update" ON staff FOR UPDATE USING (true);
 CREATE POLICY "Allow authenticated delete" ON staff FOR DELETE USING (true);
 
+-- Departments Policies
+DROP POLICY IF EXISTS "Allow public read" ON departments;
+DROP POLICY IF EXISTS "Allow authenticated insert" ON departments;
+DROP POLICY IF EXISTS "Allow authenticated update" ON departments;
+DROP POLICY IF EXISTS "Allow authenticated delete" ON departments;
+CREATE POLICY "Allow public read" ON departments FOR SELECT USING (true);
+CREATE POLICY "Allow authenticated insert" ON departments FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow authenticated update" ON departments FOR UPDATE USING (true);
+CREATE POLICY "Allow authenticated delete" ON departments FOR DELETE USING (true);
+
+-- Designations Policies
+DROP POLICY IF EXISTS "Allow public read" ON designations;
+DROP POLICY IF EXISTS "Allow authenticated insert" ON designations;
+DROP POLICY IF EXISTS "Allow authenticated update" ON designations;
+DROP POLICY IF EXISTS "Allow authenticated delete" ON designations;
+CREATE POLICY "Allow public read" ON designations FOR SELECT USING (true);
+CREATE POLICY "Allow authenticated insert" ON designations FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow authenticated update" ON designations FOR UPDATE USING (true);
+CREATE POLICY "Allow authenticated delete" ON designations FOR DELETE USING (true);
+
+-- Staff Leave Requests Policies
+DROP POLICY IF EXISTS "Allow public read" ON staff_leave_requests;
+DROP POLICY IF EXISTS "Allow authenticated insert" ON staff_leave_requests;
+DROP POLICY IF EXISTS "Allow authenticated update" ON staff_leave_requests;
+DROP POLICY IF EXISTS "Allow authenticated delete" ON staff_leave_requests;
+CREATE POLICY "Allow public read" ON staff_leave_requests FOR SELECT USING (true);
+CREATE POLICY "Allow authenticated insert" ON staff_leave_requests FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow authenticated update" ON staff_leave_requests FOR UPDATE USING (true);
+CREATE POLICY "Allow authenticated delete" ON staff_leave_requests FOR DELETE USING (true);
+
+-- Leave Requests (Student) Policies
+DROP POLICY IF EXISTS "Allow public read" ON leave_requests;
+DROP POLICY IF EXISTS "Allow authenticated insert" ON leave_requests;
+DROP POLICY IF EXISTS "Allow authenticated update" ON leave_requests;
+DROP POLICY IF EXISTS "Allow authenticated delete" ON leave_requests;
+CREATE POLICY "Allow public read" ON leave_requests FOR SELECT USING (true);
+CREATE POLICY "Allow authenticated insert" ON leave_requests FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow authenticated update" ON leave_requests FOR UPDATE USING (true);
+CREATE POLICY "Allow authenticated delete" ON leave_requests FOR DELETE USING (true);
+
 -- Settings Policies
 DROP POLICY IF EXISTS "Allow public read" ON settings;
 DROP POLICY IF EXISTS "Allow authenticated update" ON settings;
@@ -449,3 +565,43 @@ CREATE POLICY "Allow public read" ON complaints FOR SELECT USING (true);
 CREATE POLICY "Allow authenticated insert" ON complaints FOR INSERT WITH CHECK (true);
 CREATE POLICY "Allow authenticated update" ON complaints FOR UPDATE USING (true);
 CREATE POLICY "Allow authenticated delete" ON complaints FOR DELETE USING (true);
+
+-- Fee Types Policies
+DROP POLICY IF EXISTS "Allow public read" ON fee_types;
+DROP POLICY IF EXISTS "Allow authenticated insert" ON fee_types;
+DROP POLICY IF EXISTS "Allow authenticated update" ON fee_types;
+DROP POLICY IF EXISTS "Allow authenticated delete" ON fee_types;
+CREATE POLICY "Allow public read" ON fee_types FOR SELECT USING (true);
+CREATE POLICY "Allow authenticated insert" ON fee_types FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow authenticated update" ON fee_types FOR UPDATE USING (true);
+CREATE POLICY "Allow authenticated delete" ON fee_types FOR DELETE USING (true);
+
+-- Fee Master Policies
+DROP POLICY IF EXISTS "Allow public read" ON fee_master;
+DROP POLICY IF EXISTS "Allow authenticated insert" ON fee_master;
+DROP POLICY IF EXISTS "Allow authenticated update" ON fee_master;
+DROP POLICY IF EXISTS "Allow authenticated delete" ON fee_master;
+CREATE POLICY "Allow public read" ON fee_master FOR SELECT USING (true);
+CREATE POLICY "Allow authenticated insert" ON fee_master FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow authenticated update" ON fee_master FOR UPDATE USING (true);
+CREATE POLICY "Allow authenticated delete" ON fee_master FOR DELETE USING (true);
+
+-- Fee Collections Policies
+DROP POLICY IF EXISTS "Allow public read" ON fee_collections;
+DROP POLICY IF EXISTS "Allow authenticated insert" ON fee_collections;
+DROP POLICY IF EXISTS "Allow authenticated update" ON fee_collections;
+DROP POLICY IF EXISTS "Allow authenticated delete" ON fee_collections;
+CREATE POLICY "Allow public read" ON fee_collections FOR SELECT USING (true);
+CREATE POLICY "Allow authenticated insert" ON fee_collections FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow authenticated update" ON fee_collections FOR UPDATE USING (true);
+CREATE POLICY "Allow authenticated delete" ON fee_collections FOR DELETE USING (true);
+
+-- Contra Entries Policies
+DROP POLICY IF EXISTS "Allow public read" ON contra_entries;
+DROP POLICY IF EXISTS "Allow authenticated insert" ON contra_entries;
+DROP POLICY IF EXISTS "Allow authenticated update" ON contra_entries;
+DROP POLICY IF EXISTS "Allow authenticated delete" ON contra_entries;
+CREATE POLICY "Allow public read" ON contra_entries FOR SELECT USING (true);
+CREATE POLICY "Allow authenticated insert" ON contra_entries FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow authenticated update" ON contra_entries FOR UPDATE USING (true);
+CREATE POLICY "Allow authenticated delete" ON contra_entries FOR DELETE USING (true);

@@ -386,6 +386,7 @@ interface FeeTransaction {
 
 interface Staff {
   id: string;
+  staffId?: string;
   name: string;
   surname: string;
   email: string;
@@ -2570,55 +2571,75 @@ const FeeManagement = ({
     date: new Date().toISOString().split('T')[0]
   });
 
-  const handleContraEntry = () => {
+  const handleContraEntry = async () => {
     if (contraForm.amount === 0) {
       alert('Please enter a valid amount');
       return;
     }
 
-    if (contraForm.type === 'Bank to Cash') {
-      if (bankBalance < contraForm.amount) {
-        alert('Insufficient bank balance');
-        return;
+    if (!supabase) return;
+
+    try {
+      if (contraForm.type === 'Bank to Cash') {
+        if (bankBalance < contraForm.amount) {
+          alert('Insufficient bank balance');
+          return;
+        }
+        setBankBalance(bankBalance - contraForm.amount);
+        setCashBalance(cashBalance + contraForm.amount);
+      } else if (contraForm.type === 'Cash to Bank') {
+        if (cashBalance < contraForm.amount) {
+          alert('Insufficient cash balance');
+          return;
+        }
+        setCashBalance(cashBalance - contraForm.amount);
+        setBankBalance(bankBalance + contraForm.amount);
+      } else if (contraForm.type === 'Bank Adjustment') {
+        setBankBalance(bankBalance + contraForm.amount);
+      } else if (contraForm.type === 'Cash Adjustment') {
+        setCashBalance(cashBalance + contraForm.amount);
       }
-      setBankBalance(bankBalance - contraForm.amount);
-      setCashBalance(cashBalance + contraForm.amount);
-    } else if (contraForm.type === 'Cash to Bank') {
-      if (cashBalance < contraForm.amount) {
-        alert('Insufficient cash balance');
-        return;
+
+      const { data: inserted, error } = await supabase
+        .from('contra_entries')
+        .insert([{
+          type: contraForm.type,
+          amount: contraForm.amount,
+          reference: contraForm.reference,
+          date: contraForm.date
+        }])
+        .select();
+
+      if (error) throw error;
+
+      if (inserted) {
+        const newEntry = {
+          ...inserted[0],
+          timestamp: inserted[0].created_at
+        };
+
+        setContraEntries([newEntry, ...contraEntries]);
+        setAdjustmentLogs([{
+          id: `AL${Date.now()}`,
+          type: contraForm.type,
+          amount: contraForm.amount,
+          reference: contraForm.reference,
+          date: contraForm.date,
+          timestamp: new Date().toLocaleString()
+        }, ...adjustmentLogs]);
+
+        alert(`${contraForm.type} processed successfully`);
+        setContraForm({
+          type: 'Bank to Cash',
+          amount: 0,
+          reference: '',
+          date: new Date().toISOString().split('T')[0]
+        });
       }
-      setCashBalance(cashBalance - contraForm.amount);
-      setBankBalance(bankBalance + contraForm.amount);
-    } else if (contraForm.type === 'Bank Adjustment') {
-      setBankBalance(bankBalance + contraForm.amount);
-    } else if (contraForm.type === 'Cash Adjustment') {
-      setCashBalance(cashBalance + contraForm.amount);
+    } catch (err) {
+      console.error('Error processing contra entry:', err);
+      alert('Error processing contra entry');
     }
-
-    const newEntry = {
-      id: `CE${Date.now()}`,
-      ...contraForm,
-      timestamp: new Date().toLocaleString()
-    };
-
-    setContraEntries([newEntry, ...contraEntries]);
-    setAdjustmentLogs([{
-      id: `AL${Date.now()}`,
-      type: contraForm.type,
-      amount: contraForm.amount,
-      reference: contraForm.reference,
-      date: contraForm.date,
-      timestamp: new Date().toLocaleString()
-    }, ...adjustmentLogs]);
-
-    alert(`${contraForm.type} processed successfully`);
-    setContraForm({
-      type: 'Bank to Cash',
-      amount: 0,
-      reference: '',
-      date: new Date().toISOString().split('T')[0]
-    });
   };
 
   const handleBalanceAdjustment = (type: 'Bank' | 'Cash', amount: number, reason: string) => {
@@ -2660,11 +2681,13 @@ const FeeManagement = ({
     return breakdown;
   };
 
-  const handleCollectFee = () => {
+  const handleCollectFee = async () => {
     if (!selectedStudent) {
       alert('Please select student');
       return;
     }
+
+    if (!supabase) return;
 
     const monthlyFees = feeMaster.filter((f: any) => f.class === selectedStudent.class && f.frequency === 'Monthly');
     
@@ -2702,8 +2725,6 @@ const FeeManagement = ({
     let remainingPayment = amountToCollect;
     const paymentBreakdown: Record<string, number> = {};
     
-    // Sort monthly fees to ensure consistent distribution order (e.g. Tuition first)
-    // For now, we'll just use the order in feeMaster
     monthlyFees.forEach((f: any) => {
       const dueForType = currentDuesBreakdown[f.feeType] || 0;
       if (dueForType > 0 && remainingPayment > 0) {
@@ -2717,46 +2738,71 @@ const FeeManagement = ({
 
     const invoiceNumber = `REC-${Date.now().toString().slice(-6)}`;
     
-    const newTransaction: FeeTransaction = {
-      id: `FT${Date.now()}`,
-      studentId: selectedStudent.studentId,
-      studentName: `${selectedStudent.name} ${selectedStudent.surname}`,
-      rollNo: selectedStudent.rollNo || 'N/A',
-      class: selectedStudent.class,
-      section: selectedStudent.section,
-      feeType: `Consolidated Monthly Fees (${selectedMonth})`,
-      amount: totalRemainingDue,
-      discount: paymentDetails.discount,
-      discountReason: paymentDetails.discountReason,
-      scholarship: paymentDetails.scholarship,
-      totalPaid: amountToCollect,
-      paymentMode: paymentDetails.mode,
-      transactionId: paymentDetails.transactionId,
-      invoiceNumber,
-      collectedBy: 'Admin',
-      period: selectedMonth,
-      date: new Date().toLocaleDateString(),
-      dueDate: paymentDetails.dueDate,
-      status: amountToCollect >= totalPayable ? 'Paid' : 'Partial',
-      breakdown: paymentBreakdown
-    };
+    try {
+      const { data: inserted, error } = await supabase
+        .from('fee_collections')
+        .insert([{
+          student_id: selectedStudent.studentId,
+          student_name: `${selectedStudent.name} ${selectedStudent.surname}`,
+          roll_no: selectedStudent.rollNo || 'N/A',
+          class: selectedStudent.class,
+          section: selectedStudent.section,
+          fee_type: `Consolidated Monthly Fees (${selectedMonth})`,
+          amount: totalRemainingDue,
+          discount: paymentDetails.discount,
+          discount_reason: paymentDetails.discountReason,
+          scholarship: paymentDetails.scholarship,
+          total_paid: amountToCollect,
+          payment_mode: paymentDetails.mode,
+          transaction_id: paymentDetails.transactionId,
+          invoice_number: invoiceNumber,
+          collected_by: 'Admin',
+          period: selectedMonth,
+          date: new Date().toLocaleDateString(),
+          due_date: paymentDetails.dueDate,
+          status: amountToCollect >= totalPayable ? 'Paid' : 'Partial',
+          breakdown: paymentBreakdown
+        }])
+        .select();
 
-    setFeeTransactions([newTransaction, ...feeTransactions]);
-    setShowReceipt(newTransaction);
-    
-    alert(`Fee of ₹${amountToCollect} collected for ${selectedStudent.name} for ${selectedMonth}. Status: ${newTransaction.status}`);
-    
-    // Reset form
-    setSelectedStudent(null);
-    setPaymentDetails({
-      mode: 'Cash',
-      transactionId: '',
-      discount: 0,
-      discountReason: '',
-      scholarship: 0,
-      amountPaid: 0,
-      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-    });
+      if (error) throw error;
+
+      if (inserted) {
+        const newTransaction: FeeTransaction = {
+          ...inserted[0],
+          studentId: inserted[0].student_id,
+          studentName: inserted[0].student_name,
+          rollNo: inserted[0].roll_no,
+          feeType: inserted[0].fee_type,
+          paymentMode: inserted[0].payment_mode,
+          transactionId: inserted[0].transaction_id,
+          invoiceNumber: inserted[0].invoice_number,
+          collectedBy: inserted[0].collected_by,
+          dueDate: inserted[0].due_date,
+          totalPaid: inserted[0].total_paid
+        };
+
+        setFeeTransactions([newTransaction, ...feeTransactions]);
+        setShowReceipt(newTransaction);
+        
+        alert(`Fee of ₹${amountToCollect} collected for ${selectedStudent.name} for ${selectedMonth}. Status: ${newTransaction.status}`);
+        
+        // Reset form
+        setSelectedStudent(null);
+        setPaymentDetails({
+          mode: 'Cash',
+          transactionId: '',
+          discount: 0,
+          discountReason: '',
+          scholarship: 0,
+          amountPaid: 0,
+          dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+        });
+      }
+    } catch (err) {
+      console.error('Error collecting fee:', err);
+      alert('Error collecting fee');
+    }
   };
 
   const exportToExcel = () => {
@@ -2787,32 +2833,51 @@ const FeeManagement = ({
     setMasterSelections(initialSelections);
   }, [feeTypes]);
 
-  const handleAssignFees = () => {
+  const handleAssignFees = async () => {
     if (!masterClass) {
       alert('Please select a class');
       return;
     }
 
-    const newEntries: FeeMaster[] = [];
+    if (!supabase) return;
+
+    const newEntries: any[] = [];
     Object.entries(masterSelections).forEach(([feeType, data]: [string, any]) => {
       if (data.selected && data.amount > 0) {
         // Check if already exists for this class and type
         const exists = feeMaster.find((f: any) => f.class === masterClass && f.feeType === feeType);
         if (!exists) {
           newEntries.push({
-            id: `FM${Date.now()}${Math.random().toString(36).substr(2, 5)}`,
             class: masterClass,
-            feeType,
+            fee_type: feeType,
             amount: data.amount,
-            frequency: data.frequency as any
+            frequency: data.frequency
           });
         }
       }
     });
 
     if (newEntries.length > 0) {
-      setFeeMaster([...feeMaster, ...newEntries]);
-      alert(`${newEntries.length} fees assigned to ${masterClass}`);
+      try {
+        const { data: inserted, error } = await supabase
+          .from('fee_master')
+          .insert(newEntries)
+          .select();
+
+        if (error) throw error;
+
+        if (inserted) {
+          const formattedInserted = inserted.map(fm => ({
+            ...fm,
+            feeType: fm.fee_type
+          }));
+          setFeeMaster([...feeMaster, ...formattedInserted]);
+          alert(`${newEntries.length} fees assigned to ${masterClass}`);
+        }
+      } catch (err) {
+        console.error('Error assigning fees:', err);
+        alert('Error assigning fees');
+      }
     } else {
       alert('No new fees to assign. Check if they are already assigned or amounts are zero.');
     }
@@ -3127,11 +3192,23 @@ const FeeManagement = ({
                 <div className="flex gap-2">
                   <Input placeholder="New Fee Type" id="newFeeType" />
                   <button 
-                    onClick={() => {
+                    onClick={async () => {
                       const input = document.getElementById('newFeeType') as HTMLInputElement;
-                      if (input.value) {
-                        setFeeTypes([...feeTypes, { id: Date.now().toString(), name: input.value, description: '' }]);
-                        input.value = '';
+                      if (input.value && supabase) {
+                        try {
+                          const { data: inserted, error } = await supabase
+                            .from('fee_types')
+                            .insert([{ name: input.value, description: '' }])
+                            .select();
+                          
+                          if (error) throw error;
+                          if (inserted) {
+                            setFeeTypes([...feeTypes, inserted[0]]);
+                            input.value = '';
+                          }
+                        } catch (err) {
+                          console.error('Error adding fee type:', err);
+                        }
                       }
                     }}
                     className="btn-primary px-4"
@@ -3145,17 +3222,44 @@ const FeeManagement = ({
                       <span className="font-medium">{f.name}</span>
                       <div className="flex gap-1">
                         <button 
-                          onClick={() => {
+                          onClick={async () => {
                             const newName = prompt('Edit Fee Type Name:', f.name);
-                            if (newName && newName !== f.name) {
-                              setFeeTypes(feeTypes.map(t => t.id === f.id ? { ...t, name: newName } : t));
+                            if (newName && newName !== f.name && supabase) {
+                              try {
+                                const { error } = await supabase
+                                  .from('fee_types')
+                                  .update({ name: newName })
+                                  .eq('id', f.id);
+                                
+                                if (error) throw error;
+                                setFeeTypes(feeTypes.map(t => t.id === f.id ? { ...t, name: newName } : t));
+                              } catch (err) {
+                                console.error('Error editing fee type:', err);
+                              }
                             }
                           }}
                           className="text-blue-500 hover:bg-blue-50 p-1 rounded-lg"
                         >
                           <Edit2 size={16} />
                         </button>
-                        <button onClick={() => setFeeTypes(feeTypes.filter(t => t.id !== f.id))} className="text-red-500 hover:bg-red-50 p-1 rounded-lg">
+                        <button 
+                          onClick={async () => {
+                            if (confirm('Are you sure?') && supabase) {
+                              try {
+                                const { error } = await supabase
+                                  .from('fee_types')
+                                  .delete()
+                                  .eq('id', f.id);
+                                
+                                if (error) throw error;
+                                setFeeTypes(feeTypes.filter(t => t.id !== f.id));
+                              } catch (err) {
+                                console.error('Error deleting fee type:', err);
+                              }
+                            }
+                          }} 
+                          className="text-red-500 hover:bg-red-50 p-1 rounded-lg"
+                        >
                           <Trash2 size={16} />
                         </button>
                       </div>
@@ -6573,28 +6677,117 @@ const ReportsView = ({ students, feeTransactions, attendance, homeworks, hostelA
 const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, designations, setDesignations, leaveRequests, setLeaveRequests }: any) => {
   const [activeTab, setActiveTab] = useState('staff-list');
   const [showAddStaff, setShowAddStaff] = useState(false);
+  const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
   const [newStaff, setNewStaff] = useState<Partial<Staff>>({
+    name: '',
+    surname: '',
+    email: '',
+    mobile: '',
+    role: '',
+    department: '',
+    designation: '',
     status: 'Active',
     joiningDate: new Date().toISOString().split('T')[0]
   });
   const [newDepartment, setNewDepartment] = useState('');
+  const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
   const [newDesignation, setNewDesignation] = useState('');
+  const [editingDesignation, setEditingDesignation] = useState<Designation | null>(null);
   const [newLeave, setNewLeave] = useState<any>({
+    staffId: '',
     startDate: new Date().toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0],
     reason: '',
     status: 'Pending'
   });
 
-  const handleAddStaff = () => {
+  const handleAddStaff = async () => {
     if (!newStaff.name || !newStaff.surname || !newStaff.role) return;
-    const staffMember: Staff = {
-      ...newStaff as Staff,
-      id: `STF-${Math.floor(100000 + Math.random() * 900000)}`
-    };
-    setStaff([...staff, staffMember]);
-    setShowAddStaff(false);
-    setNewStaff({ status: 'Active', joiningDate: new Date().toISOString().split('T')[0] });
+    
+    try {
+      if (editingStaff) {
+        const { error } = await supabase
+          .from('staff')
+          .update({
+            name: newStaff.name,
+            surname: newStaff.surname,
+            role: newStaff.role,
+            department: newStaff.department,
+            designation: newStaff.designation,
+            email: newStaff.email,
+            mobile: newStaff.mobile,
+            status: newStaff.status,
+            joining_date: newStaff.joiningDate,
+            photo: newStaff.photo
+          })
+          .eq('staff_id', editingStaff.staffId);
+        
+        if (error) throw error;
+        setStaff(staff.map((s: Staff) => s.id === editingStaff.id ? { ...s, ...newStaff } : s));
+        setEditingStaff(null);
+      } else {
+        const staffId = `STF-${Math.floor(100000 + Math.random() * 900000)}`;
+        const { error } = await supabase
+          .from('staff')
+          .insert([{
+            staff_id: staffId,
+            name: newStaff.name,
+            surname: newStaff.surname,
+            role: newStaff.role,
+            department: newStaff.department,
+            designation: newStaff.designation,
+            email: newStaff.email,
+            mobile: newStaff.mobile,
+            status: newStaff.status,
+            joining_date: newStaff.joiningDate,
+            photo: newStaff.photo
+          }]);
+        
+        if (error) throw error;
+        const staffMember: Staff = {
+          ...newStaff as Staff,
+          id: staffId,
+          staffId: staffId
+        };
+        setStaff([...staff, staffMember]);
+      }
+      setShowAddStaff(false);
+      setNewStaff({
+        name: '',
+        surname: '',
+        email: '',
+        mobile: '',
+        role: '',
+        department: '',
+        designation: '',
+        status: 'Active',
+        joiningDate: new Date().toISOString().split('T')[0]
+      });
+    } catch (err) {
+      console.error('Error saving staff:', err);
+      alert('Error saving staff member');
+    }
+  };
+
+  const handleDeleteStaff = async (id: string) => {
+    if (window.confirm('Are you sure you want to delete this staff member?')) {
+      try {
+        const staffMember = staff.find((s: Staff) => s.id === id);
+        if (!staffMember) return;
+        const { error } = await supabase.from('staff').delete().eq('staff_id', staffMember.staffId || id);
+        if (error) throw error;
+        setStaff(staff.filter((s: Staff) => s.id !== id));
+      } catch (err) {
+        console.error('Error deleting staff:', err);
+        alert('Error deleting staff member');
+      }
+    }
+  };
+
+  const handleEditStaff = (s: Staff) => {
+    setEditingStaff(s);
+    setNewStaff(s);
+    setShowAddStaff(true);
   };
 
   return (
@@ -6603,7 +6796,11 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
         <h2 className="text-2xl font-black text-text-heading">Human Resource</h2>
         <div className="flex gap-2">
           <button 
-            onClick={() => setShowAddStaff(true)}
+            onClick={() => {
+              setEditingStaff(null);
+              setNewStaff({ status: 'Active', joiningDate: new Date().toISOString().split('T')[0] });
+              setShowAddStaff(true);
+            }}
             className="btn-primary flex items-center gap-2"
           >
             <Plus size={18} /> Add Staff
@@ -6640,20 +6837,21 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
             <table className="w-full text-left">
               <thead>
                 <tr className="border-b border-slate-100">
-                  <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Staff ID</th>
-                  <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Name</th>
-                  <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Role</th>
-                  <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Department</th>
-                  <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Designation</th>
-                  <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Mobile</th>
-                  <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Status</th>
+                  <th className="pb-4 px-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Staff ID</th>
+                  <th className="pb-4 px-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Name</th>
+                  <th className="pb-4 px-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Role</th>
+                  <th className="pb-4 px-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Department</th>
+                  <th className="pb-4 px-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Designation</th>
+                  <th className="pb-4 px-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Mobile</th>
+                  <th className="pb-4 px-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Status</th>
+                  <th className="pb-4 px-4 font-bold text-xs uppercase text-text-secondary tracking-wider text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {staff.map((s: Staff) => (
                   <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="py-4 text-sm font-bold text-primary">{s.id}</td>
-                    <td className="py-4">
+                    <td className="py-4 px-4 text-sm font-bold text-primary">{s.id}</td>
+                    <td className="py-4 px-4">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs overflow-hidden">
                           {s.photo ? <img src={s.photo} alt="" className="w-full h-full object-cover" /> : s.name[0]}
@@ -6661,16 +6859,32 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
                         <span className="font-bold text-text-heading">{s.name} {s.surname}</span>
                       </div>
                     </td>
-                    <td className="py-4 text-sm text-text-sub">{s.role}</td>
-                    <td className="py-4 text-sm text-text-sub">{s.department}</td>
-                    <td className="py-4 text-sm text-text-sub">{s.designation}</td>
-                    <td className="py-4 text-sm text-text-sub">{s.mobile}</td>
-                    <td className="py-4">
+                    <td className="py-4 px-4 text-sm text-text-sub">{s.role}</td>
+                    <td className="py-4 px-4 text-sm text-text-sub">{s.department}</td>
+                    <td className="py-4 px-4 text-sm text-text-sub">{s.designation}</td>
+                    <td className="py-4 px-4 text-sm text-text-sub">{s.mobile}</td>
+                    <td className="py-4 px-4">
                       <span className={`text-[10px] font-black px-2 py-1 rounded-full uppercase ${
                         s.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
                       }`}>
                         {s.status}
                       </span>
+                    </td>
+                    <td className="py-4 px-4 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button 
+                          onClick={() => handleEditStaff(s)}
+                          className="p-2 text-primary hover:bg-primary/5 rounded-lg transition-all"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteStaff(s.id)}
+                          className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -6684,6 +6898,19 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
         <Card className="max-w-xl mx-auto p-8">
           <h3 className="text-xl font-black text-text-heading mb-6 uppercase tracking-tight">Apply Leave</h3>
           <div className="space-y-6">
+            <div className="w-full">
+              <label className="label-text">Select Staff <span className="text-red-500">*</span></label>
+              <select 
+                className="input-field"
+                value={newLeave.staffId}
+                onChange={(e: any) => setNewLeave({...newLeave, staffId: e.target.value})}
+              >
+                <option value="">Select Staff Member</option>
+                {staff.map((s: Staff) => (
+                  <option key={s.id} value={s.id}>{s.name} {s.surname} ({s.id})</option>
+                ))}
+              </select>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <Input label="Start Date" type="date" value={newLeave.startDate} onChange={(e: any) => setNewLeave({...newLeave, startDate: e.target.value})} />
               <Input label="End Date" type="date" value={newLeave.endDate} onChange={(e: any) => setNewLeave({...newLeave, endDate: e.target.value})} />
@@ -6697,15 +6924,47 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
               />
             </div>
             <button 
-              onClick={() => {
-                if (!newLeave.reason) return;
-                setLeaveRequests([{...newLeave, id: Date.now().toString(), staffName: 'Current User', staffId: 'STF-001'}, ...leaveRequests]);
-                setNewLeave({
-                  startDate: new Date().toISOString().split('T')[0],
-                  endDate: new Date().toISOString().split('T')[0],
-                  reason: '',
-                  status: 'Pending'
-                });
+              onClick={async () => {
+                if (!newLeave.reason || !newLeave.staffId) return;
+                try {
+                  const selectedStaff = staff.find((s: Staff) => s.id === newLeave.staffId);
+                  const staffName = selectedStaff ? `${selectedStaff.name} ${selectedStaff.surname}` : 'Unknown';
+                  
+                  const { data, error } = await supabase
+                    .from('staff_leave_requests')
+                    .insert([{
+                      staff_id: newLeave.staffId,
+                      staff_name: staffName,
+                      start_date: newLeave.startDate,
+                      end_date: newLeave.endDate,
+                      reason: newLeave.reason,
+                      status: 'Pending'
+                    }])
+                    .select();
+                  
+                  if (error) throw error;
+                  
+                  if (data) {
+                    setLeaveRequests([{
+                      ...newLeave, 
+                      id: data[0].id, 
+                      staffName,
+                      staffId: newLeave.staffId
+                    }, ...leaveRequests]);
+                  }
+
+                  setNewLeave({
+                    staffId: '',
+                    startDate: new Date().toISOString().split('T')[0],
+                    endDate: new Date().toISOString().split('T')[0],
+                    reason: '',
+                    status: 'Pending'
+                  });
+                  alert('Leave request submitted successfully!');
+                } catch (err) {
+                  console.error('Error submitting leave:', err);
+                  alert('Error submitting leave request');
+                }
               }}
               className="btn-primary w-full py-4"
             >
@@ -6751,13 +7010,35 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
                       {l.status === 'Pending' && (
                         <div className="flex gap-2">
                           <button 
-                            onClick={() => setLeaveRequests(leaveRequests.map((r: any) => r.id === l.id ? {...r, status: 'Approved'} : r))}
+                            onClick={async () => {
+                              try {
+                                const { error } = await supabase
+                                  .from('staff_leave_requests')
+                                  .update({ status: 'Approved' })
+                                  .eq('id', l.id);
+                                if (error) throw error;
+                                setLeaveRequests(leaveRequests.map((r: any) => r.id === l.id ? {...r, status: 'Approved'} : r));
+                              } catch (err) {
+                                console.error('Error approving leave:', err);
+                              }
+                            }}
                             className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-all"
                           >
                             <CheckCircle2 size={16} />
                           </button>
                           <button 
-                            onClick={() => setLeaveRequests(leaveRequests.map((r: any) => r.id === l.id ? {...r, status: 'Rejected'} : r))}
+                            onClick={async () => {
+                              try {
+                                const { error } = await supabase
+                                  .from('staff_leave_requests')
+                                  .update({ status: 'Rejected' })
+                                  .eq('id', l.id);
+                                if (error) throw error;
+                                setLeaveRequests(leaveRequests.map((r: any) => r.id === l.id ? {...r, status: 'Rejected'} : r));
+                              } catch (err) {
+                                console.error('Error rejecting leave:', err);
+                              }
+                            }}
                             className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-all"
                           >
                             <X size={16} />
@@ -6781,19 +7062,52 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
       {activeTab === 'departments' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <Card className="md:col-span-1 p-6">
-            <h3 className="text-lg font-bold mb-6">Add Department</h3>
+            <h3 className="text-lg font-bold mb-6">{editingDepartment ? 'Edit Department' : 'Add Department'}</h3>
             <div className="space-y-4">
               <Input label="Department Name" value={newDepartment} onChange={(e: any) => setNewDepartment(e.target.value)} />
-              <button 
-                onClick={() => {
-                  if (!newDepartment) return;
-                  setDepartments([...departments, { id: Date.now().toString(), name: newDepartment }]);
-                  setNewDepartment('');
-                }}
-                className="btn-primary w-full py-3"
-              >
-                Save Department
-              </button>
+              <div className="flex gap-2">
+                {editingDepartment && (
+                  <button 
+                    onClick={() => {
+                      setEditingDepartment(null);
+                      setNewDepartment('');
+                    }}
+                    className="flex-1 py-3 font-bold text-text-sub hover:bg-slate-50 rounded-xl transition-all"
+                  >
+                    Cancel
+                  </button>
+                )}
+                <button 
+                  onClick={async () => {
+                    if (!newDepartment) return;
+                    try {
+                      if (editingDepartment) {
+                        const { error } = await supabase
+                          .from('departments')
+                          .update({ name: newDepartment })
+                          .eq('id', editingDepartment.id);
+                        if (error) throw error;
+                        setDepartments(departments.map((d: any) => d.id === editingDepartment.id ? { ...d, name: newDepartment } : d));
+                        setEditingDepartment(null);
+                      } else {
+                        const { data, error } = await supabase
+                          .from('departments')
+                          .insert([{ name: newDepartment }])
+                          .select();
+                        if (error) throw error;
+                        if (data) setDepartments([...departments, data[0]]);
+                      }
+                      setNewDepartment('');
+                    } catch (err) {
+                      console.error('Error saving department:', err);
+                      alert('Error saving department');
+                    }
+                  }}
+                  className="btn-primary flex-1 py-3"
+                >
+                  {editingDepartment ? 'Update' : 'Save Department'}
+                </button>
+              </div>
             </div>
           </Card>
           <Card className="md:col-span-2 p-6">
@@ -6811,12 +7125,33 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
                     <tr key={d.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="py-4 text-sm font-bold text-text-heading">{d.name}</td>
                       <td className="py-4 text-right">
-                        <button 
-                          onClick={() => setDepartments(departments.filter((dep: any) => dep.id !== d.id))}
-                          className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        <div className="flex justify-end gap-2">
+                          <button 
+                            onClick={() => {
+                              setEditingDepartment(d);
+                              setNewDepartment(d.name);
+                            }}
+                            className="p-2 text-primary hover:bg-primary/5 rounded-lg transition-all"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button 
+                            onClick={async () => {
+                              if (window.confirm('Delete this department?')) {
+                                try {
+                                  const { error } = await supabase.from('departments').delete().eq('id', d.id);
+                                  if (error) throw error;
+                                  setDepartments(departments.filter((dep: any) => dep.id !== d.id));
+                                } catch (err) {
+                                  console.error('Error deleting department:', err);
+                                }
+                              }
+                            }}
+                            className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -6830,19 +7165,52 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
       {activeTab === 'designations' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <Card className="md:col-span-1 p-6">
-            <h3 className="text-lg font-bold mb-6">Add Designation</h3>
+            <h3 className="text-lg font-bold mb-6">{editingDesignation ? 'Edit Designation' : 'Add Designation'}</h3>
             <div className="space-y-4">
               <Input label="Designation Name" value={newDesignation} onChange={(e: any) => setNewDesignation(e.target.value)} />
-              <button 
-                onClick={() => {
-                  if (!newDesignation) return;
-                  setDesignations([...designations, { id: Date.now().toString(), name: newDesignation }]);
-                  setNewDesignation('');
-                }}
-                className="btn-primary w-full py-3"
-              >
-                Save Designation
-              </button>
+              <div className="flex gap-2">
+                {editingDesignation && (
+                  <button 
+                    onClick={() => {
+                      setEditingDesignation(null);
+                      setNewDesignation('');
+                    }}
+                    className="flex-1 py-3 font-bold text-text-sub hover:bg-slate-50 rounded-xl transition-all"
+                  >
+                    Cancel
+                  </button>
+                )}
+                <button 
+                  onClick={async () => {
+                    if (!newDesignation) return;
+                    try {
+                      if (editingDesignation) {
+                        const { error } = await supabase
+                          .from('designations')
+                          .update({ name: newDesignation })
+                          .eq('id', editingDesignation.id);
+                        if (error) throw error;
+                        setDesignations(designations.map((d: any) => d.id === editingDesignation.id ? { ...d, name: newDesignation } : d));
+                        setEditingDesignation(null);
+                      } else {
+                        const { data, error } = await supabase
+                          .from('designations')
+                          .insert([{ name: newDesignation }])
+                          .select();
+                        if (error) throw error;
+                        if (data) setDesignations([...designations, data[0]]);
+                      }
+                      setNewDesignation('');
+                    } catch (err) {
+                      console.error('Error saving designation:', err);
+                      alert('Error saving designation');
+                    }
+                  }}
+                  className="btn-primary flex-1 py-3"
+                >
+                  {editingDesignation ? 'Update' : 'Save Designation'}
+                </button>
+              </div>
             </div>
           </Card>
           <Card className="md:col-span-2 p-6">
@@ -6860,12 +7228,33 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
                     <tr key={d.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="py-4 text-sm font-bold text-text-heading">{d.name}</td>
                       <td className="py-4 text-right">
-                        <button 
-                          onClick={() => setDesignations(designations.filter((des: any) => des.id !== d.id))}
-                          className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        <div className="flex justify-end gap-2">
+                          <button 
+                            onClick={() => {
+                              setEditingDesignation(d);
+                              setNewDesignation(d.name);
+                            }}
+                            className="p-2 text-primary hover:bg-primary/5 rounded-lg transition-all"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button 
+                            onClick={async () => {
+                              if (window.confirm('Delete this designation?')) {
+                                try {
+                                  const { error } = await supabase.from('designations').delete().eq('id', d.id);
+                                  if (error) throw error;
+                                  setDesignations(designations.filter((des: any) => des.id !== d.id));
+                                } catch (err) {
+                                  console.error('Error deleting designation:', err);
+                                }
+                              }
+                            }}
+                            className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -6876,7 +7265,7 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
         </div>
       )}
 
-      {/* Add Staff Modal */}
+      {/* Add/Edit Staff Modal */}
       <AnimatePresence>
         {showAddStaff && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50">
@@ -6887,7 +7276,7 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
               className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl overflow-y-auto max-h-[90vh]"
             >
               <div className="flex items-center justify-between mb-8">
-                <h3 className="text-2xl font-black text-text-heading">Add New Staff</h3>
+                <h3 className="text-2xl font-black text-text-heading">{editingStaff ? 'Edit Staff' : 'Add New Staff'}</h3>
                 <button onClick={() => setShowAddStaff(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
                   <X size={24} />
                 </button>
@@ -6944,7 +7333,7 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
 
               <div className="mt-8 flex gap-3">
                 <button onClick={() => setShowAddStaff(false)} className="flex-1 py-4 font-bold text-text-sub hover:bg-slate-50 rounded-2xl transition-all">Cancel</button>
-                <button onClick={handleAddStaff} className="flex-1 btn-primary py-4">Save Staff</button>
+                <button onClick={handleAddStaff} className="flex-1 btn-primary py-4">{editingStaff ? 'Update Staff' : 'Save Staff'}</button>
               </div>
             </motion.div>
           </div>
@@ -6958,6 +7347,8 @@ const CommunicatePanel = ({ notifications, setNotifications, templates, setTempl
   const [activeTab, setActiveTab] = useState('notice-board');
   const [showAddNotice, setShowAddNotice] = useState(false);
   const [newNotice, setNewNotice] = useState<Partial<Notification>>({
+    title: '',
+    message: '',
     type: 'Info',
     targetRoles: ['admin', 'teacher', 'student', 'parent'],
     date: new Date().toISOString().split('T')[0]
@@ -6971,7 +7362,13 @@ const CommunicatePanel = ({ notifications, setNotifications, templates, setTempl
     };
     setNotifications([notice, ...notifications]);
     setShowAddNotice(false);
-    setNewNotice({ type: 'Info', targetRoles: ['admin', 'teacher', 'student', 'parent'], date: new Date().toISOString().split('T')[0] });
+    setNewNotice({
+      title: '',
+      message: '',
+      type: 'Info',
+      targetRoles: ['admin', 'teacher', 'student', 'parent'],
+      date: new Date().toISOString().split('T')[0]
+    });
   };
 
   return (
@@ -7092,14 +7489,28 @@ const FrontOfficePanel = ({ enquiries, setEnquiries, visitors, setVisitors, comp
   const [showAddEnquiry, setShowAddEnquiry] = useState(false);
   const [editingEnquiryId, setEditingEnquiryId] = useState<string | null>(null);
   const [newEnquiry, setNewEnquiry] = useState<Partial<AdmissionEnquiry>>({
+    name: '',
+    fatherName: '',
+    mobile: '',
+    class: '',
+    source: '',
+    note: '',
     status: 'Pending',
     date: new Date().toISOString().split('T')[0]
   });
   const [newVisitor, setNewVisitor] = useState<Partial<Visitor>>({
+    name: '',
+    mobile: '',
+    purpose: '',
     date: new Date().toISOString().split('T')[0],
-    inTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    inTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    outTime: ''
   });
   const [newComplaint, setNewComplaint] = useState<Partial<Complaint>>({
+    name: '',
+    type: '',
+    source: '',
+    description: '',
     date: new Date().toISOString().split('T')[0],
     status: 'Pending'
   });
@@ -7147,7 +7558,16 @@ const FrontOfficePanel = ({ enquiries, setEnquiries, visitors, setVisitors, comp
     }
     
     setShowAddEnquiry(false);
-    setNewEnquiry({ status: 'Pending', date: new Date().toISOString().split('T')[0] });
+    setNewEnquiry({
+      name: '',
+      fatherName: '',
+      mobile: '',
+      class: '',
+      source: '',
+      note: '',
+      status: 'Pending',
+      date: new Date().toISOString().split('T')[0]
+    });
   };
 
   const handleDeleteEnquiry = async (id: string) => {
@@ -7211,8 +7631,12 @@ const FrontOfficePanel = ({ enquiries, setEnquiries, visitors, setVisitors, comp
       };
       setVisitors([savedVisitor, ...visitors]);
       setNewVisitor({
+        name: '',
+        mobile: '',
+        purpose: '',
         date: new Date().toISOString().split('T')[0],
-        inTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        inTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        outTime: ''
       });
     }
   };
@@ -7264,6 +7688,10 @@ const FrontOfficePanel = ({ enquiries, setEnquiries, visitors, setVisitors, comp
       };
       setComplaints([savedComplaint, ...complaints]);
       setNewComplaint({
+        name: '',
+        type: '',
+        source: '',
+        description: '',
         date: new Date().toISOString().split('T')[0],
         status: 'Pending'
       });
@@ -8332,6 +8760,76 @@ export default function App() {
           setExpenses(formattedExpenses);
         }
 
+        // Fetch HR Data
+        const { data: staffData } = await supabase.from('staff').select('*');
+        if (staffData) {
+          const formattedStaff = staffData.map(s => ({
+            ...s,
+            staffId: s.staff_id,
+            joiningDate: s.joining_date
+          }));
+          setStaff(formattedStaff);
+        }
+
+        const { data: departmentsData } = await supabase.from('departments').select('*');
+        if (departmentsData) setDepartments(departmentsData);
+
+        const { data: designationsData } = await supabase.from('designations').select('*');
+        if (designationsData) setDesignations(designationsData);
+
+        const { data: staffLeaveData } = await supabase.from('staff_leave_requests').select('*');
+        if (staffLeaveData) {
+          const formattedLeave = staffLeaveData.map(l => ({
+            ...l,
+            staffId: l.staff_id,
+            staffName: l.staff_name,
+            startDate: l.start_date,
+            endDate: l.end_date,
+            appliedDate: l.applied_date
+          }));
+          setStaffLeaveRequests(formattedLeave);
+        }
+
+        // Fetch Fee Data
+        const { data: feeTypesData } = await supabase.from('fee_types').select('*');
+        if (feeTypesData) setFeeTypes(feeTypesData);
+
+        const { data: feeMasterData } = await supabase.from('fee_master').select('*');
+        if (feeMasterData) {
+          const formattedFeeMaster = feeMasterData.map(fm => ({
+            ...fm,
+            feeType: fm.fee_type
+          }));
+          setFeeMaster(formattedFeeMaster);
+        }
+
+        const { data: feeCollectionsData } = await supabase.from('fee_collections').select('*');
+        if (feeCollectionsData) {
+          const formattedCollections = feeCollectionsData.map(fc => ({
+            ...fc,
+            studentId: fc.student_id,
+            studentName: fc.student_name,
+            rollNo: fc.roll_no,
+            feeType: fc.fee_type,
+            paymentMode: fc.payment_mode,
+            transactionId: fc.transaction_id,
+            invoiceNumber: fc.invoice_number,
+            collectedBy: fc.collected_by,
+            dueDate: fc.due_date,
+            totalPaid: fc.total_paid
+          }));
+          setFeeTransactions(formattedCollections);
+        }
+
+        const { data: contraEntriesData } = await supabase.from('contra_entries').select('*');
+        if (contraEntriesData) {
+          const formattedContra = contraEntriesData.map(ce => ({
+            ...ce,
+            timestamp: ce.created_at
+          }));
+          setContraEntries(formattedContra);
+        }
+
         // Fetch Settings
         const { data: settingsData } = await supabase.from('settings').select('*').eq('id', 1).single();
         if (settingsData) {
@@ -9000,6 +9498,29 @@ export default function App() {
     }
   };
 
+  const compressImage = (base64: string, maxWidth = 800, quality = 0.7): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.src = base64;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = (maxWidth / width) * height;
+          width = maxWidth;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+    });
+  };
+
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!supabase) {
@@ -9070,7 +9591,11 @@ export default function App() {
           .from('students')
           .update(payload)
           .eq('id', editingStudentId);
-        if (error) throw error;
+        if (error) {
+          console.error('Supabase Update Error:', error);
+          showModal('Error', `Failed to update student: ${error.message}`);
+          return;
+        }
 
         const updatedStudents = students.map(s => 
           s.id === editingStudentId ? { ...formData, id: s.id, studentId: s.studentId || formData.studentId } : s
@@ -9082,7 +9607,11 @@ export default function App() {
           .from('students')
           .insert([payload])
           .select();
-        if (error) throw error;
+        if (error) {
+          console.error('Supabase Insert Error:', error);
+          showModal('Error', `Failed to register student: ${error.message}`);
+          return;
+        }
         if (inserted) {
           const newStudent = {
             ...inserted[0],
@@ -9420,7 +9949,7 @@ export default function App() {
               />
               <SidebarItem 
                 icon={Coins} 
-                label={isSidebarOpen ? "Income Expance" : ""} 
+                label={isSidebarOpen ? "Income & Expense" : ""} 
                 active={view === 'income-expense'} 
                 onClick={() => setView('income-expense')} 
                 isSidebarOpen={isSidebarOpen}
@@ -10371,7 +10900,7 @@ export default function App() {
                                 const relations = formData.relationsInSchool || [];
                                 setFormData({
                                   ...formData,
-                                  relationsInSchool: [...relations, { type: '', name: '', classSection: '' }]
+                                  relationsInSchool: [...relations, { relationName: '', name: '', classSection: '' }]
                                 });
                               }}
                               className="text-xs font-bold text-primary hover:underline flex items-center gap-1"
@@ -10437,41 +10966,9 @@ export default function App() {
                               </div>
                             </div>
                           ))}
-                          {(!formData.relationsInSchool || formData.relationsInSchool.length === 0) && !isViewOnly && (
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                              <Select 
-                                label="Relation Name" 
-                                options={['Sibling', 'Relative']} 
-                                value=""
-                                onChange={(e: any) => {
-                                  setFormData({
-                                    ...formData, 
-                                    relationsInSchool: [{ relationName: e.target.value, name: '', classSection: '' }]
-                                  });
-                                }}
-                              />
-                              <Input 
-                                label="Name" 
-                                placeholder="Full Name" 
-                                value=""
-                                onChange={(e: any) => {
-                                  setFormData({
-                                    ...formData, 
-                                    relationsInSchool: [{ relationName: '', name: e.target.value, classSection: '' }]
-                                  });
-                                }}
-                              />
-                              <Input 
-                                label="Class/Section" 
-                                placeholder="e.g. 8-A" 
-                                value=""
-                                onChange={(e: any) => {
-                                  setFormData({
-                                    ...formData, 
-                                    relationsInSchool: [{ relationName: '', name: '', classSection: e.target.value }]
-                                  });
-                                }}
-                              />
+                          {(!formData.relationsInSchool || formData.relationsInSchool.length === 0) && (
+                            <div className="text-center py-6 border-2 border-dashed border-slate-200 rounded-xl">
+                              <p className="text-sm text-text-secondary italic">No relations added. Click "Add More" to add sibling/relative details.</p>
                             </div>
                           )}
                         </div>
@@ -10552,8 +11049,9 @@ export default function App() {
                             const file = e.target.files[0];
                             if (file) {
                               const reader = new FileReader();
-                              reader.onloadend = () => {
-                                setFormData({ ...formData, photo: reader.result as string });
+                              reader.onloadend = async () => {
+                                const compressed = await compressImage(reader.result as string);
+                                setFormData({ ...formData, photo: compressed });
                               };
                               reader.readAsDataURL(file);
                             }
@@ -10568,11 +11066,12 @@ export default function App() {
                             const file = e.target.files[0];
                             if (file) {
                               const reader = new FileReader();
-                              reader.onloadend = () => {
+                              reader.onloadend = async () => {
+                                const compressed = await compressImage(reader.result as string);
                                 const docs = [...(formData.documents || [])];
                                 const index = docs.findIndex(d => d.name === 'Aadhaar Card');
-                                if (index > -1) docs[index].file = reader.result as string;
-                                else docs.push({ name: 'Aadhaar Card', file: reader.result as string });
+                                if (index > -1) docs[index].file = compressed;
+                                else docs.push({ name: 'Aadhaar Card', file: compressed });
                                 setFormData({ ...formData, documents: docs });
                               };
                               reader.readAsDataURL(file);
@@ -10587,11 +11086,12 @@ export default function App() {
                             const file = e.target.files[0];
                             if (file) {
                               const reader = new FileReader();
-                              reader.onloadend = () => {
+                              reader.onloadend = async () => {
+                                const compressed = await compressImage(reader.result as string);
                                 const docs = [...(formData.documents || [])];
                                 const index = docs.findIndex(d => d.name === 'Caste Certificate');
-                                if (index > -1) docs[index].file = reader.result as string;
-                                else docs.push({ name: 'Caste Certificate', file: reader.result as string });
+                                if (index > -1) docs[index].file = compressed;
+                                else docs.push({ name: 'Caste Certificate', file: compressed });
                                 setFormData({ ...formData, documents: docs });
                               };
                               reader.readAsDataURL(file);
@@ -10607,11 +11107,12 @@ export default function App() {
                             const file = e.target.files[0];
                             if (file) {
                               const reader = new FileReader();
-                              reader.onloadend = () => {
+                              reader.onloadend = async () => {
+                                const compressed = await compressImage(reader.result as string);
                                 const docs = [...(formData.documents || [])];
                                 const index = docs.findIndex(d => d.name === 'Parents Documents');
-                                if (index > -1) docs[index].file = reader.result as string;
-                                else docs.push({ name: 'Parents Documents', file: reader.result as string });
+                                if (index > -1) docs[index].file = compressed;
+                                else docs.push({ name: 'Parents Documents', file: compressed });
                                 setFormData({ ...formData, documents: docs });
                               };
                               reader.readAsDataURL(file);
@@ -10628,11 +11129,12 @@ export default function App() {
                             const file = e.target.files[0];
                             if (file) {
                               const reader = new FileReader();
-                              reader.onloadend = () => {
+                              reader.onloadend = async () => {
+                                const compressed = await compressImage(reader.result as string);
                                 const docs = [...(formData.documents || [])];
                                 const index = docs.findIndex(d => d.name === 'Signature');
-                                if (index > -1) docs[index].file = reader.result as string;
-                                else docs.push({ name: 'Signature', file: reader.result as string });
+                                if (index > -1) docs[index].file = compressed;
+                                else docs.push({ name: 'Signature', file: compressed });
                                 setFormData({ ...formData, documents: docs });
                               };
                               reader.readAsDataURL(file);
@@ -12819,6 +13321,18 @@ const IDCardsModule = ({
               </>
             )}
             <div className="flex justify-between items-center">
+              <span className="text-[8px] font-bold text-text-secondary uppercase tracking-wider">Mother's Name</span>
+              <span className="text-[10px] font-black text-text-heading uppercase">{person.motherName || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[8px] font-bold text-text-secondary uppercase tracking-wider">Aadhaar No</span>
+              <span className="text-[10px] font-black text-text-heading font-mono">{person.aadhaarNumber || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between items-start">
+              <span className="text-[8px] font-bold text-text-secondary uppercase tracking-wider mt-0.5">Address</span>
+              <span className="text-[9px] font-black text-text-heading text-right leading-tight max-w-[150px]">{person.residentialAddress || person.address || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between items-center">
               <span className="text-[8px] font-bold text-text-secondary uppercase tracking-wider">Contact</span>
               <span className="text-[10px] font-black text-text-heading">{person.fatherMobile || person.mobile || '+91 98765 43210'}</span>
             </div>
@@ -12966,7 +13480,12 @@ const IDCardsModule = ({
         <h1 className="text-5xl font-black text-primary uppercase tracking-tighter mb-4">Certificate of Appraisal</h1>
         <p className="text-xl font-bold text-text-sub uppercase tracking-[0.3em] mb-12">This is awarded to</p>
         
-        <h2 className="text-6xl font-black text-text-heading mb-8 font-serif italic">{person.name} {person.surname}</h2>
+        <h2 className="text-6xl font-black text-text-heading mb-4 font-serif italic">{person.name} {person.surname}</h2>
+        <div className="flex gap-4 text-xs font-bold text-text-sub mb-8">
+          <span>Mother: {person.motherName || 'N/A'}</span>
+          <span>Aadhaar: {person.aadhaarNumber || 'N/A'}</span>
+          <span>Address: {person.residentialAddress || person.address || 'N/A'}</span>
+        </div>
         
         <div className="w-64 h-1 bg-primary mb-8"></div>
         
@@ -13042,7 +13561,10 @@ const IDCardsModule = ({
 
         <p>This is to certify that <span className="font-black border-b-2 border-slate-300 px-4">{student.name} {student.surname}</span>, 
         Son/Daughter of <span className="font-black border-b-2 border-slate-300 px-4">{student.fatherName}</span> and 
-        <span className="font-black border-b-2 border-slate-300 px-4">{student.motherName || 'N/A'}</span> was admitted to this school on 
+        <span className="font-black border-b-2 border-slate-300 px-4">{student.motherName || 'N/A'}</span>, 
+        residing at <span className="font-black border-b-2 border-slate-300 px-4">{student.residentialAddress || student.address || 'N/A'}</span>, 
+        bearing Aadhaar Number <span className="font-black border-b-2 border-slate-300 px-4">{student.aadhaarNumber || 'N/A'}</span>, 
+        was admitted to this school on 
         <span className="font-black border-b-2 border-slate-300 px-4">01/04/2022</span> on a Transfer Certificate from 
         <span className="font-black border-b-2 border-slate-300 px-4">Global Public School</span> and left on 
         <span className="font-black border-b-2 border-slate-300 px-4">15/03/2024</span> with a <span className="font-black border-b-2 border-slate-300 px-4">Good</span> character.</p>
@@ -13075,7 +13597,12 @@ const IDCardsModule = ({
         <h1 className="text-5xl font-black text-amber-600 uppercase tracking-tighter mb-4">Certificate of Achievement</h1>
         <p className="text-xl font-bold text-text-sub uppercase tracking-[0.3em] mb-12">This award is proudly presented to</p>
         
-        <h2 className="text-6xl font-black text-text-heading mb-8 font-serif italic">{student.name} {student.surname}</h2>
+        <h2 className="text-6xl font-black text-text-heading mb-4 font-serif italic">{student.name} {student.surname}</h2>
+        <div className="flex gap-4 text-xs font-bold text-text-sub mb-8">
+          <span>Mother: {student.motherName || 'N/A'}</span>
+          <span>Aadhaar: {student.aadhaarNumber || 'N/A'}</span>
+          <span>Address: {student.residentialAddress || student.address || 'N/A'}</span>
+        </div>
         
         <div className="w-64 h-1 bg-amber-400 mb-8"></div>
         
@@ -13113,7 +13640,10 @@ const IDCardsModule = ({
         </div>
 
         <p className="mt-10">This is to certify that <span className="font-black border-b-2 border-slate-300 px-4">{student.name} {student.surname}</span>, 
-        Son/Daughter of <span className="font-black border-b-2 border-slate-300 px-4">{student.fatherName}</span>, 
+        Son/Daughter of <span className="font-black border-b-2 border-slate-300 px-4">{student.fatherName}</span> and 
+        <span className="font-black border-b-2 border-slate-300 px-4">{student.motherName || 'N/A'}</span>, 
+        residing at <span className="font-black border-b-2 border-slate-300 px-4">{student.residentialAddress || student.address || 'N/A'}</span>, 
+        bearing Aadhaar Number <span className="font-black border-b-2 border-slate-300 px-4">{student.aadhaarNumber || 'N/A'}</span>, 
         a student of this school in <span className="font-black border-b-2 border-slate-300 px-4">{student.class}</span>, 
         is hereby granted this Migration Certificate at his/her own request.</p>
 

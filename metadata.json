@@ -1,0 +1,7 @@
+{
+  "name": "Remix: SUBRAI MISSION CONVENT SCHOOL",
+  "description": "A modern, student-friendly school management software powered by JOSHODA. Now featuring advanced report card management for teachers and parents.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

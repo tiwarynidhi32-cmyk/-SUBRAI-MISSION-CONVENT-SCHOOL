@@ -873,13 +873,16 @@ const Card = ({ children, className = "", ...props }: { children: React.ReactNod
 );
 
 const formatDate = (date: Date | string) => {
+  if (!date) return '-';
   const d = new Date(date);
-  if (isNaN(d.getTime())) return 'Invalid Date';
+  if (isNaN(d.getTime())) return String(date);
   const day = String(d.getDate()).padStart(2, '0');
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const year = d.getFullYear();
   return `${day}/${month}/${year}`;
 };
+
+const getTodayDate = () => new Date().toISOString().split('T')[0];
 
 const Dashboard = ({ 
   currentUser, 
@@ -893,12 +896,18 @@ const Dashboard = ({
   examSchedules, 
   examResults, 
   setView,
-  formatDate
+  formatDate,
+  staffAttendance,
+  staff
 }: any) => {
   const isSuperAdmin = currentUser?.role === 'super-admin';
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super-admin';
   const isTeacher = currentUser?.role === 'teacher';
   const isStudent = currentUser?.role === 'student' || currentUser?.role === 'parent';
+
+  const today = getTodayDate();
+  const studentsPresent = attendance.filter((a: any) => (a.date === today || a.date === formatDate(today)) && a.status === 'Present').length;
+  const teachersPresent = staffAttendance.filter((a: any) => (a.date === today || a.date === formatDate(today)) && a.status === 'Present').length;
 
   // Helper for student/parent dashboard
   const studentData = isStudent ? students.find((s: any) => s.studentId === (currentUser.studentId || currentUser.id)) : null;
@@ -929,7 +938,7 @@ const Dashboard = ({
               <p className="text-white/70 text-xs font-bold uppercase tracking-widest mb-1">Students Present</p>
               <div className="flex items-end gap-2">
                 <h3 className="text-3xl font-black">
-                  {attendance.filter((a: any) => a.date === formatDate(new Date()) && a.status === 'Present').length}
+                  {studentsPresent}
                 </h3>
                 <span className="text-sm font-bold mb-1 opacity-60">/ {students.length}</span>
               </div>
@@ -937,12 +946,12 @@ const Dashboard = ({
                 <div 
                   className="h-full bg-white rounded-full" 
                   style={{ 
-                    width: `${students.length > 0 ? (attendance.filter((a: any) => a.date === formatDate(new Date()) && a.status === 'Present').length / students.length) * 100 : 0}%` 
+                    width: `${students.length > 0 ? (studentsPresent / students.length) * 100 : 0}%` 
                   }}
                 ></div>
               </div>
               <p className="text-[10px] mt-2 font-black uppercase tracking-widest opacity-80">
-                {students.length > 0 ? Math.round((attendance.filter((a: any) => a.date === formatDate(new Date()) && a.status === 'Present').length / students.length) * 100) : 0}% Attendance Rate
+                {students.length > 0 ? Math.round((studentsPresent / students.length) * 100) : 0}% Attendance Rate
               </p>
             </Card>
 
@@ -956,14 +965,21 @@ const Dashboard = ({
               <p className="text-text-secondary text-xs font-bold uppercase tracking-widest mb-1">Teachers Present</p>
               <div className="flex items-end gap-2">
                 <h3 className="text-3xl font-black text-text-heading">
-                  {masterData.teachers.length > 0 ? Math.floor(masterData.teachers.length * 0.95) : 0}
+                  {teachersPresent}
                 </h3>
-                <span className="text-sm font-bold text-text-sub mb-1">/ {masterData.teachers.length}</span>
+                <span className="text-sm font-bold text-text-sub mb-1">/ {staff.length || masterData.teachers.length}</span>
               </div>
               <div className="mt-4 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500 rounded-full" style={{ width: '95%' }}></div>
+                <div 
+                  className="h-full bg-blue-500 rounded-full" 
+                  style={{ 
+                    width: `${(staff.length || masterData.teachers.length) > 0 ? (teachersPresent / (staff.length || masterData.teachers.length)) * 100 : 0}%` 
+                  }}
+                ></div>
               </div>
-              <p className="text-[10px] mt-2 font-black text-blue-600 uppercase tracking-widest">95% Attendance Rate</p>
+              <p className="text-[10px] mt-2 font-black text-blue-600 uppercase tracking-widest">
+                {(staff.length || masterData.teachers.length) > 0 ? Math.round((teachersPresent / (staff.length || masterData.teachers.length)) * 100) : 0}% Attendance Rate
+              </p>
             </Card>
 
             <Card className="p-6 bg-white border-slate-100 shadow-sm">
@@ -1574,7 +1590,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
           class: s.class,
           section: s.section,
           status: manualForm.status,
-          date: formatDate(manualForm.date),
+          date: manualForm.date,
           time: '--',
           marked_by: currentUser?.role === 'admin' ? 'Admin' : 'Teacher',
           period: manualForm.period
@@ -1618,7 +1634,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
           class: s.class,
           section: s.section,
           status: manualForm.status,
-          date: formatDate(manualForm.date),
+          date: manualForm.date,
           time: '--',
           markedBy: currentUser?.role === 'admin' ? 'Admin' : 'Teacher',
           period: manualForm.period
@@ -1678,7 +1694,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
   };
 
   const filteredHistory = attendance.filter((a: any) => {
-    return (!historyFilters.date || a.date === formatDate(new Date(historyFilters.date))) &&
+    return (!historyFilters.date || a.date === historyFilters.date || a.date === formatDate(historyFilters.date)) &&
            (!historyFilters.class || a.class === historyFilters.class) &&
            (!historyFilters.section || a.section === historyFilters.section);
   });
@@ -1981,7 +1997,8 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
                         </tr>
                       ) : (
                         manualFilteredStudents.map((s: any) => {
-                          const isMarked = attendance.find((a: any) => a.studentId === s.studentId && a.date === formatDate(new Date(manualForm.date)));
+                          const today = getTodayDate();
+                          const isMarked = attendance.find((a: any) => a.studentId === s.studentId && (a.date === today || a.date === formatDate(today)));
                           return (
                             <tr 
                               key={s.studentId} 
@@ -2090,7 +2107,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
                       ((currentUser?.role === 'admin' || currentUser?.role === 'teacher') ? filteredHistory : myAttendance).map((a: any) => (
                         <tr key={a.id} className="hover:bg-slate-50/50 transition-colors">
                           <td className="py-4 text-sm font-medium text-text-sub">
-                            {a.date}
+                            {formatDate(a.date)}
                             <span className="ml-2 text-[10px] font-bold text-primary/60 uppercase">({a.period || 'Morning'})</span>
                           </td>
                           {(currentUser?.role === 'admin' || currentUser?.role === 'teacher') && (
@@ -7461,7 +7478,9 @@ const DueFeesModule = ({ students, feeMaster, feeTransactions, currentUser, getS
   );
 };
 
-const Admin360View = ({ students, masterData, feeTransactions, attendance, bankBalance, cashBalance, contraEntries, incomes, expenses }: any) => {
+const Admin360View = ({ students, masterData, feeTransactions, attendance, bankBalance, cashBalance, contraEntries, incomes, expenses, getStudentDueFees, staffAttendance, staff, formatDate }: any) => {
+  const today = getTodayDate();
+  
   // Calculate revenue data for the last 6 months
   const last6Months = Array.from({ length: 6 }, (_, i) => {
     const d = new Date();
@@ -7471,10 +7490,16 @@ const Admin360View = ({ students, masterData, feeTransactions, attendance, bankB
 
   const revenueData = last6Months.map(month => {
     const monthFees = feeTransactions
-      .filter((t: any) => new Date(t.date || Date.now()).toLocaleString('default', { month: 'short' }) === month)
+      .filter((t: any) => {
+        const d = new Date(t.date || Date.now());
+        return d.toLocaleString('default', { month: 'short' }) === month;
+      })
       .reduce((sum: number, t: any) => sum + t.totalPaid, 0);
     const monthIncomes = incomes
-      .filter((i: any) => new Date(i.date || Date.now()).toLocaleString('default', { month: 'short' }) === month)
+      .filter((i: any) => {
+        const d = new Date(i.date || Date.now());
+        return d.toLocaleString('default', { month: 'short' }) === month;
+      })
       .reduce((sum: number, i: any) => sum + i.amount, 0);
     return { month, amount: monthFees + monthIncomes };
   });
@@ -7491,8 +7516,8 @@ const Admin360View = ({ students, masterData, feeTransactions, attendance, bankB
   const financeData = [
     { 
       period: 'Daily', 
-      received: feeTransactions.filter((t: any) => t.date === new Date().toISOString().split('T')[0]).reduce((sum: number, t: any) => sum + t.totalPaid, 0),
-      expense: expenses.filter((e: any) => e.date === new Date().toISOString().split('T')[0]).reduce((sum: number, e: any) => sum + e.amount, 0)
+      received: feeTransactions.filter((t: any) => t.date === today || t.date === formatDate(today)).reduce((sum: number, t: any) => sum + t.totalPaid, 0),
+      expense: expenses.filter((e: any) => e.date === today || e.date === formatDate(today)).reduce((sum: number, e: any) => sum + e.amount, 0)
     },
     { 
       period: 'Weekly', 
@@ -7509,16 +7534,28 @@ const Admin360View = ({ students, masterData, feeTransactions, attendance, bankB
     },
     { 
       period: 'Monthly', 
-      received: feeTransactions.filter((t: any) => new Date(t.date || Date.now()).getMonth() === new Date().getMonth()).reduce((sum: number, t: any) => sum + t.totalPaid, 0),
-      expense: expenses.filter((e: any) => new Date(e.date || Date.now()).getMonth() === new Date().getMonth()).reduce((sum: number, e: any) => sum + e.amount, 0)
+      received: feeTransactions.filter((t: any) => {
+        const d = new Date(t.date || Date.now());
+        return d.getMonth() === new Date().getMonth() && d.getFullYear() === new Date().getFullYear();
+      }).reduce((sum: number, t: any) => sum + t.totalPaid, 0),
+      expense: expenses.filter((e: any) => {
+        const d = new Date(e.date || Date.now());
+        return d.getMonth() === new Date().getMonth() && d.getFullYear() === new Date().getFullYear();
+      }).reduce((sum: number, e: any) => sum + e.amount, 0)
     },
   ];
 
-  const staffAttendanceData = masterData.teachers.slice(0, 4).map((name: string) => ({
-    name,
-    status: Math.random() > 0.1 ? 'Present' : 'Absent',
-    days: 20 + Math.floor(Math.random() * 6)
-  }));
+  const totalOutstanding = students.reduce((sum: number, s: any) => sum + getStudentDueFees(s), 0);
+  const studentsPresentToday = attendance.filter((a: any) => (a.date === today || a.date === formatDate(today)) && a.status === 'Present').length;
+
+  const staffAttendanceData = staff.slice(0, 4).map((s: any) => {
+    const record = staffAttendance.find((a: any) => a.staffId === s.staffId && (a.date === today || a.date === formatDate(today)));
+    return {
+      name: `${s.name} ${s.surname}`,
+      status: record ? record.status : 'Not Marked',
+      days: staffAttendance.filter((a: any) => a.staffId === s.staffId && a.status === 'Present').length
+    };
+  });
 
   const COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 
@@ -7570,6 +7607,17 @@ const Admin360View = ({ students, masterData, feeTransactions, attendance, bankB
             </div>
           </div>
         </Card>
+        <Card className="p-6 bg-gradient-to-br from-rose-600 to-rose-700 text-white border-none">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-white/20 text-white rounded-xl flex items-center justify-center">
+              <AlertCircle size={24} />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-white/70 uppercase tracking-wider">Total Outstanding Due</p>
+              <p className="text-2xl font-black">₹{totalOutstanding.toLocaleString()}</p>
+            </div>
+          </div>
+        </Card>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -7591,7 +7639,7 @@ const Admin360View = ({ students, masterData, feeTransactions, attendance, bankB
             </div>
             <div>
               <p className="text-xs font-bold text-text-secondary uppercase tracking-wider">Total Staff</p>
-              <p className="text-2xl font-black text-text-heading">{masterData.teachers.length + 12}</p>
+              <p className="text-2xl font-black text-text-heading">{Math.max(staff.length, masterData.teachers.length)}</p>
             </div>
           </div>
         </Card>
@@ -7603,7 +7651,7 @@ const Admin360View = ({ students, masterData, feeTransactions, attendance, bankB
             <div>
               <p className="text-xs font-bold text-text-secondary uppercase tracking-wider">Avg Attendance</p>
               <p className="text-2xl font-black text-text-heading">
-                {students.length > 0 ? Math.round((attendance.filter(a => a.date === new Date().toISOString().split('T')[0] && a.status === 'Present').length / students.length) * 100) : 0}%
+                {students.length > 0 ? Math.round((studentsPresentToday / students.length) * 100) : 0}%
               </p>
             </div>
           </div>
@@ -7615,7 +7663,9 @@ const Admin360View = ({ students, masterData, feeTransactions, attendance, bankB
             </div>
             <div>
               <p className="text-xs font-bold text-text-secondary uppercase tracking-wider">Recent Entries</p>
-              <p className="text-2xl font-black text-text-heading">{contraEntries.length}</p>
+              <p className="text-2xl font-black text-text-heading">
+                {contraEntries.length + feeTransactions.filter((t: any) => t.date === today || t.date === formatDate(today)).length}
+              </p>
             </div>
           </div>
         </Card>
@@ -7794,31 +7844,42 @@ const Admin360View = ({ students, masterData, feeTransactions, attendance, bankB
   );
 };
 
-const Class360View = ({ students, masterData, attendance, feeTransactions }: any) => {
+const Class360View = ({ students, masterData, attendance, feeTransactions, getStudentDueFees, teacherAssignments, formatDate, examSchedules, examResults }: any) => {
   const [selectedClass, setSelectedClass] = useState(masterData.classes[0]);
   const [selectedSection, setSelectedSection] = useState(masterData.sections[0]);
+  const today = getTodayDate();
 
   const classStudents = students.filter((s: any) => s.class === selectedClass && s.section === selectedSection);
   
   // Calculate class attendance rate
-  const classAttendance = attendance.filter((a: any) => a.class === selectedClass && a.section === selectedSection && a.date === new Date().toISOString().split('T')[0]);
+  const classAttendance = attendance.filter((a: any) => a.class === selectedClass && a.section === selectedSection && (a.date === today || a.date === formatDate(today)));
   const presentCount = classAttendance.filter((a: any) => a.status === 'Present').length;
   const attendanceRate = classStudents.length > 0 ? Math.round((presentCount / classStudents.length) * 100) : 0;
 
   // Calculate fee clearance
-  const totalExpected = classStudents.length * 5000; // Mock expected fee per student
+  const classDues = classStudents.reduce((sum: number, s: any) => sum + getStudentDueFees(s), 0);
   const totalCollected = feeTransactions
     .filter((t: any) => t.class === selectedClass && t.section === selectedSection)
     .reduce((sum: number, t: any) => sum + t.totalPaid, 0);
-  const feeClearance = totalExpected > 0 ? Math.round((totalCollected / totalExpected) * 100) : 0;
+  const feeClearance = (totalCollected + classDues) > 0 ? Math.round((totalCollected / (totalCollected + classDues)) * 100) : 0;
 
-  const performanceData = [
-    { subject: 'Math', avg: 75 + Math.floor(Math.random() * 15), top: 95 + Math.floor(Math.random() * 5) },
-    { subject: 'Science', avg: 70 + Math.floor(Math.random() * 20), top: 92 + Math.floor(Math.random() * 8) },
-    { subject: 'English', avg: 80 + Math.floor(Math.random() * 10), top: 96 + Math.floor(Math.random() * 4) },
-    { subject: 'History', avg: 65 + Math.floor(Math.random() * 25), top: 88 + Math.floor(Math.random() * 12) },
-    { subject: 'Geography', avg: 70 + Math.floor(Math.random() * 15), top: 90 + Math.floor(Math.random() * 10) },
-  ];
+  const classTeacher = teacherAssignments.find((a: any) => a.class === selectedClass && a.section === selectedSection)?.classTeacher || 'Not Assigned';
+
+  const performanceData = masterData.subjects.slice(0, 5).map((subject: string) => {
+    const subjectSchedules = examSchedules.filter((s: any) => s.subject === subject && s.class === selectedClass && s.section === selectedSection);
+    const subjectResults = examResults.filter((r: any) => subjectSchedules.some((s: any) => s.id === r.examScheduleId));
+    
+    if (subjectResults.length === 0) {
+      // Fallback to some semi-random but consistent data if no real results yet, 
+      // or just show 0. Let's show 0 to be truly dynamic.
+      return { subject, avg: 0, top: 0 };
+    }
+    
+    const avg = Math.round(subjectResults.reduce((sum: number, r: any) => sum + r.marksObtained, 0) / subjectResults.length);
+    const top = Math.max(...subjectResults.map((r: any) => r.marksObtained));
+    
+    return { subject, avg, top };
+  });
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-20">
@@ -7850,7 +7911,7 @@ const Class360View = ({ students, masterData, attendance, feeTransactions }: any
         </Card>
         <Card className="p-6">
           <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-1">Class Teacher</p>
-          <p className="text-xl font-black text-primary">{masterData.teachers[Math.floor(Math.random() * masterData.teachers.length)]}</p>
+          <p className="text-xl font-black text-primary">{classTeacher}</p>
         </Card>
         <Card className="p-6">
           <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-1">Attendance</p>
@@ -7942,7 +8003,13 @@ const Class360View = ({ students, masterData, attendance, feeTransactions }: any
                     </div>
                   </td>
                   <td className="py-4 px-4">
-                    <span className="px-2 py-1 bg-emerald-100 text-emerald-600 rounded text-[10px] font-bold">96%</span>
+                    <span className={`px-2 py-1 rounded text-[10px] font-bold ${
+                      attendance.find((a: any) => a.studentId === s.studentId && a.date === new Date().toISOString().split('T')[0])?.status === 'Present'
+                        ? 'bg-emerald-100 text-emerald-600'
+                        : 'bg-rose-100 text-rose-600'
+                    }`}>
+                      {attendance.find((a: any) => a.studentId === s.studentId && a.date === new Date().toISOString().split('T')[0])?.status || 'N/A'}
+                    </span>
                   </td>
                   <td className="py-4 px-4">
                     <div className="flex items-center gap-2">
@@ -12840,6 +12907,8 @@ export default function App() {
                 examResults={examResults}
                 setView={setView}
                 formatDate={formatDate}
+                staffAttendance={staffAttendance}
+                staff={staff}
               />
             )}
 
@@ -12887,12 +12956,6 @@ export default function App() {
                         required 
                         value={formData.surname || ''}
                         onChange={(e: any) => setFormData({...formData, surname: e.target.value})} 
-                      />
-                      <Input 
-                        label="Roll Number" 
-                        placeholder="e.g. 101" 
-                        value={formData.rollNumber || ''}
-                        onChange={(e: any) => setFormData({...formData, rollNumber: e.target.value})} 
                       />
                       <Select 
                         label="Student Type" 
@@ -14473,6 +14536,10 @@ export default function App() {
                   contraEntries={contraEntries}
                   incomes={incomes}
                   expenses={expenses}
+                  getStudentDueFees={getStudentDueFees}
+                  staffAttendance={staffAttendance}
+                  staff={staff}
+                  formatDate={formatDate}
                 />
               </motion.div>
             )}
@@ -14506,6 +14573,11 @@ export default function App() {
                   feeTransactions={feeTransactions}
                   attendance={attendance}
                   masterData={masterData}
+                  getStudentDueFees={getStudentDueFees}
+                  teacherAssignments={teacherAssignments}
+                  formatDate={formatDate}
+                  examSchedules={examSchedules}
+                  examResults={examResults}
                 />
               </motion.div>
             )}

@@ -192,10 +192,6 @@ export const ParentPanel = ({
                 <p className="text-sm font-black text-text-heading">{student.section}</p>
               </div>
               <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
-                <p className="text-[10px] font-black text-text-sub uppercase tracking-widest">Roll No</p>
-                <p className="text-sm font-black text-text-heading">{student.rollNo}</p>
-              </div>
-              <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
                 <p className="text-[10px] font-black text-text-sub uppercase tracking-widest">Blood Group</p>
                 <p className="text-sm font-black text-red-500">{student.bloodGroup}</p>
               </div>

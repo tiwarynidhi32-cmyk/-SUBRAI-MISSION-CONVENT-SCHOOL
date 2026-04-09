@@ -565,7 +565,6 @@ export const Academics = ({
                       <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
                         <tr>
                           <th className="px-6 py-4 font-semibold">Student</th>
-                          <th className="px-6 py-4 font-semibold">Roll No</th>
                           <th className="px-6 py-4 font-semibold">Action</th>
                         </tr>
                       </thead>
@@ -583,7 +582,6 @@ export const Academics = ({
                                 </div>
                               </div>
                             </td>
-                            <td className="px-6 py-4 text-sm text-slate-600">{s.rollNo}</td>
                             <td className="px-6 py-4">
                               <div className="flex gap-2">
                                 <button 

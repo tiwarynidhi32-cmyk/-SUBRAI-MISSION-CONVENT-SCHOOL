@@ -14,12 +14,14 @@ CREATE TABLE IF NOT EXISTS students (
   class TEXT NOT NULL,
   section TEXT NOT NULL,
   gender TEXT,
+  date_of_birth DATE,
   residential_address TEXT,
   category TEXT,
   religion TEXT,
   caste TEXT,
   blood_group TEXT,
   email TEXT,
+  mobile TEXT,
   aadhaar_number TEXT,
   pan_number TEXT,
   passport_number TEXT,
@@ -36,13 +38,14 @@ CREATE TABLE IF NOT EXISTS students (
   allergy TEXT,
   has_disability BOOLEAN DEFAULT FALSE,
   disability_details TEXT,
-  relation_in_school TEXT,
+  relation_in_school JSONB DEFAULT '[]',
   photo TEXT,
   aadhaar_card_doc TEXT,
   caste_certificate_doc TEXT,
   parents_docs TEXT,
   signature_doc TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Report Card Templates
@@ -536,6 +539,22 @@ CREATE POLICY "Allow authenticated insert" ON sql_snippets FOR INSERT WITH CHECK
 CREATE POLICY "Allow authenticated update" ON sql_snippets FOR UPDATE USING (true);
 CREATE POLICY "Allow authenticated delete" ON sql_snippets FOR DELETE USING (true);
 
+-- Function to execute arbitrary SQL (USE WITH CAUTION - ONLY FOR DEV)
+CREATE OR REPLACE FUNCTION exec_sql(sql_query text)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  result json;
+BEGIN
+  EXECUTE sql_query;
+  RETURN json_build_object('status', 'success');
+EXCEPTION WHEN OTHERS THEN
+  RETURN json_build_object('status', 'error', 'message', SQLERRM);
+END;
+$$;
+
 -- Enquiries Policies
 DROP POLICY IF EXISTS "Allow public read" ON enquiries;
 DROP POLICY IF EXISTS "Allow authenticated insert" ON enquiries;
@@ -606,45 +625,7 @@ CREATE POLICY "Allow authenticated insert" ON contra_entries FOR INSERT WITH CHE
 CREATE POLICY "Allow authenticated update" ON contra_entries FOR UPDATE USING (true);
 CREATE POLICY "Allow authenticated delete" ON contra_entries FOR DELETE USING (true);
 -- 1. Ensure the students table exists (Full Schema)
-CREATE TABLE IF NOT EXISTS students (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  student_id TEXT UNIQUE NOT NULL,
-  title TEXT,
-  name TEXT NOT NULL,
-  surname TEXT NOT NULL,
-  class TEXT NOT NULL,
-  section TEXT NOT NULL,
-  gender TEXT,
-  residential_address TEXT,
-  category TEXT,
-  religion TEXT,
-  caste TEXT,
-  blood_group TEXT,
-  email TEXT,
-  aadhaar_number TEXT,
-  pan_number TEXT,
-  passport_number TEXT,
-  father_name TEXT,
-  mother_name TEXT,
-  father_mobile TEXT,
-  mother_mobile TEXT,
-  father_income TEXT,
-  father_income_source TEXT,
-  mother_income TEXT,
-  mother_income_source TEXT,
-  emergency_contact TEXT,
-  local_guardian_contact TEXT,
-  allergy TEXT,
-  has_disability BOOLEAN DEFAULT FALSE,
-  disability_details TEXT,
-  relation_in_school TEXT,
-  photo TEXT,
-  aadhaar_card_doc TEXT,
-  caste_certificate_doc TEXT,
-  parents_docs TEXT,
-  signature_doc TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
+-- (Already defined above)
 
 -- 2. Enable Row Level Security (RLS)
 ALTER TABLE students ENABLE ROW LEVEL SECURITY;
@@ -673,7 +654,6 @@ CREATE TABLE fee_collections (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   student_id TEXT REFERENCES students(student_id),
   student_name TEXT,
-  roll_no TEXT,
   class TEXT,
   section TEXT,
   fee_type TEXT,
@@ -777,57 +757,7 @@ CREATE TABLE IF NOT EXISTS academic_planner (
 -- ==========================================
 -- 1. STUDENTS & REGISTRATION
 -- ==========================================
-CREATE TABLE IF NOT EXISTS students (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    student_id TEXT UNIQUE NOT NULL,
-    title TEXT,
-    name TEXT NOT NULL,
-    surname TEXT NOT NULL,
-    class TEXT NOT NULL,
-    section TEXT NOT NULL,
-    gender TEXT,
-    date_of_birth DATE,
-    category TEXT,
-    religion TEXT,
-    caste TEXT,
-    blood_group TEXT,
-    email TEXT,
-    mobile TEXT,
-    aadhaar_number TEXT,
-    pan_number TEXT,
-    passport_number TEXT,
-    
-    -- Family Details
-    father_name TEXT,
-    mother_name TEXT,
-    father_mobile TEXT,
-    mother_mobile TEXT,
-    father_income TEXT,
-    father_income_source TEXT,
-    mother_income TEXT,
-    mother_income_source TEXT,
-    
-    -- Contact & Address
-    residential_address TEXT,
-    emergency_contact TEXT,
-    local_guardian_contact TEXT,
-    
-    -- Health & Relations
-    allergy TEXT,
-    has_disability BOOLEAN DEFAULT FALSE,
-    disability_details TEXT,
-    relation_in_school JSONB DEFAULT '[]',
-    
-    -- Documents (Base64 or URLs)
-    photo TEXT,
-    aadhaar_card_doc TEXT,
-    caste_certificate_doc TEXT,
-    parents_docs TEXT,
-    signature_doc TEXT,
-    
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- (Already defined above)
 
 -- ==========================================
 -- 2. ACADEMIC MODULE
@@ -1017,7 +947,6 @@ CREATE TABLE IF NOT EXISTS fee_collections (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     student_id TEXT NOT NULL,
     student_name TEXT,
-    roll_no TEXT,
     class TEXT,
     section TEXT,
     fee_type TEXT,

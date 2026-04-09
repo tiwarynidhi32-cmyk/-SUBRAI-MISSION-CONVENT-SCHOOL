@@ -66,7 +66,8 @@ export const FeeManagement = ({
     class: '',
     feeType: '',
     amount: 0,
-    frequency: 'Monthly'
+    frequency: 'Monthly',
+    studentType: 'Both'
   });
   const [paymentData, setPaymentData] = useState<any>({
     paymentMethod: 'Cash',
@@ -184,7 +185,8 @@ export const FeeManagement = ({
               <Select label="Class" options={masterData.classes} value={formData.class} onChange={(e: any) => setFormData({ ...formData, class: e.target.value })} />
               <Select label="Fee Type" options={feeTypes.map(t => t.name)} value={formData.feeType} onChange={(e: any) => setFormData({ ...formData, feeType: e.target.value })} />
               <Input label="Amount" type="number" value={formData.amount} onChange={(e: any) => setFormData({ ...formData, amount: Number(e.target.value) })} />
-              <Select label="Frequency" options={['Monthly', 'Quarterly', 'Half-Yearly', 'Annually']} value={formData.frequency} onChange={(e: any) => setFormData({ ...formData, frequency: e.target.value })} />
+              <Select label="Frequency" options={['Monthly', 'Quarterly', 'Half-Yearly', 'Yearly']} value={formData.frequency} onChange={(e: any) => setFormData({ ...formData, frequency: e.target.value })} />
+              <Select label="Student Type" options={['New', 'Old', 'Both']} value={formData.studentType} onChange={(e: any) => setFormData({ ...formData, studentType: e.target.value })} />
               <button 
                 onClick={() => {
                   setFeeMaster([...feeMaster, { ...formData, id: Date.now().toString() }]);
@@ -206,6 +208,7 @@ export const FeeManagement = ({
                     <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Fee Type</th>
                     <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Amount</th>
                     <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Frequency</th>
+                    <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Student Type</th>
                     <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Action</th>
                   </tr>
                 </thead>
@@ -216,6 +219,15 @@ export const FeeManagement = ({
                       <td className="py-4 text-sm text-text-sub">{f.feeType}</td>
                       <td className="py-4 text-sm font-black text-primary">₹{f.amount.toLocaleString()}</td>
                       <td className="py-4 text-sm text-text-sub">{f.frequency}</td>
+                      <td className="py-4">
+                        <span className={`text-[10px] font-black px-2 py-1 rounded-full uppercase ${
+                          f.studentType === 'New' ? 'bg-green-100 text-green-700' : 
+                          f.studentType === 'Old' ? 'bg-blue-100 text-blue-700' : 
+                          'bg-slate-100 text-slate-700'
+                        }`}>
+                          {f.studentType || 'Both'}
+                        </span>
+                      </td>
                       <td className="py-4">
                         <div className="flex gap-2">
                           <button className="p-2 hover:bg-slate-100 rounded-lg text-blue-500"><Edit2 size={16} /></button>
@@ -422,14 +434,38 @@ export const FeeManagement = ({
               <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-black">
                 {selectedStudent.name[0]}
               </div>
-              <div>
+              <div className="flex-1">
                 <p className="font-bold text-text-heading">{selectedStudent.name}</p>
                 <p className="text-xs font-bold text-text-sub uppercase tracking-wider">{selectedStudent.studentId} | {selectedStudent.class}-{selectedStudent.section}</p>
+              </div>
+              <div className="text-right">
+                <span className={`text-[10px] font-black px-2 py-1 rounded-full uppercase ${
+                  selectedStudent.studentType === 'New' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                }`}>
+                  {selectedStudent.studentType}
+                </span>
               </div>
             </div>
 
             <div className="space-y-4">
-              <Select label="Fee Type" options={feeTypes.map(t => t.name)} value={paymentData.feeType} onChange={(e: any) => setPaymentData({ ...paymentData, feeType: e.target.value })} />
+              <Select 
+                label="Fee Type" 
+                options={feeTypes.map(t => t.name)} 
+                value={paymentData.feeType} 
+                onChange={(e: any) => {
+                  const type = e.target.value;
+                  const master = feeMaster.find(m => 
+                    m.feeType === type && 
+                    m.class === selectedStudent.class &&
+                    (m.studentType === 'Both' || m.studentType === selectedStudent.studentType)
+                  );
+                  setPaymentData({ 
+                    ...paymentData, 
+                    feeType: type,
+                    amount: master ? master.amount : 0
+                  });
+                }} 
+              />
               <div className="grid grid-cols-2 gap-4">
                 <Input label="Amount" type="number" value={paymentData.amount} onChange={(e: any) => setPaymentData({ ...paymentData, amount: Number(e.target.value) })} />
                 <Input label="Fine" type="number" value={paymentData.fine} onChange={(e: any) => setPaymentData({ ...paymentData, fine: Number(e.target.value) })} />

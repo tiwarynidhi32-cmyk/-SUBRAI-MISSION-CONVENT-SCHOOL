@@ -15,7 +15,17 @@ interface SqlSnippet {
 }
 
 export const SqlEditor: React.FC = () => {
-  const [code, setCode] = useState<string>('-- Write your SQL here\nSELECT * FROM students LIMIT 10;');
+  const [code, setCode] = useState<string>(`-- Fix for missing columns in students table
+ALTER TABLE students ADD COLUMN IF NOT EXISTS date_of_birth DATE;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS mobile TEXT;
+
+-- Refresh schema cache
+NOTIFY pgrst, 'reload schema';
+
+-- Verify columns
+SELECT column_name, data_type 
+FROM information_schema.columns 
+WHERE table_name = 'students';`);
   const [title, setTitle] = useState<string>('New Query');
   const [snippets, setSnippets] = useState<SqlSnippet[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -82,16 +92,33 @@ export const SqlEditor: React.FC = () => {
   };
 
   const handleRun = async () => {
+    if (!supabase) {
+      alert('Supabase not configured');
+      return;
+    }
     setExecuting(true);
     setError(null);
     setResults(null);
     
-    // Simulating execution since raw SQL isn't allowed from client
-    // In a real app, you'd call an RPC or a backend endpoint
-    setTimeout(() => {
+    try {
+      const { data, error } = await supabase.rpc('exec_sql', { sql_query: code });
+      
+      if (error) throw error;
+      
+      if (data.status === 'error') {
+        setError(data.message);
+      } else {
+        alert('SQL executed successfully!');
+        // Refresh snippets if we modified them
+        if (code.toLowerCase().includes('sql_snippets')) {
+          fetchSnippets();
+        }
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
       setExecuting(false);
-      setError('Raw SQL execution is disabled for security. Please use the Supabase dashboard or an RPC function.');
-    }, 1000);
+    }
   };
 
   const handleShare = () => {

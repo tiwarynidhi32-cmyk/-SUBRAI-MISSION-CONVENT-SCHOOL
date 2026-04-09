@@ -79,48 +79,114 @@ export const IDCardsModule = ({ students }: IDCardsModuleProps) => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {filteredStudents.map((s) => (
-          <Card key={s.id} className="p-0 overflow-hidden group">
-            <div className="bg-primary p-6 text-white text-center relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16"></div>
-              <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full -ml-12 -mb-12"></div>
-              <div className="relative z-10">
-                <h3 className="text-lg font-black uppercase tracking-widest">Global International School</h3>
-                <p className="text-[8px] font-bold opacity-80 uppercase tracking-[0.2em]">Excellence in Education</p>
+          <Card key={s.id} className="p-0 overflow-hidden group border-2 border-blue-600 rounded-[20px] w-full max-w-[350px] mx-auto shadow-2xl">
+            {/* Header */}
+            <div className="bg-[#e0f2fe] p-4 text-center border-b border-blue-200 relative">
+              <div className="flex items-center justify-center gap-3 mb-1">
+                <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center text-white">
+                  <GraduationCap size={32} />
+                </div>
+                <div className="text-left">
+                  <h3 className="text-xl font-black text-blue-800 leading-tight">C.S.H.P. PUBLIC SCHOOL</h3>
+                  <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">GHAZIABAD</p>
+                </div>
+              </div>
+              <p className="text-[8px] font-bold text-slate-600">Ph. 0120-2843032, 9667212410</p>
+              <div className="mt-2 bg-blue-900 text-white py-1 px-4 rounded-full inline-block">
+                <p className="text-[10px] font-black uppercase tracking-widest">Session - 2024 - 2025</p>
+              </div>
+              {/* Wavy background decoration */}
+              <div className="absolute bottom-0 left-0 w-full h-4 bg-gradient-to-t from-white/50 to-transparent"></div>
+            </div>
+
+            <div className="p-6 bg-white relative">
+              {/* QR and Photo Section */}
+              <div className="flex justify-between items-start mb-6">
+                <div className="p-2 border border-slate-200 rounded-lg bg-slate-50">
+                  <QrCode size={80} className="text-slate-800" />
+                </div>
+                <div className="w-32 h-40 border-2 border-blue-600 rounded-lg overflow-hidden bg-slate-100 shadow-md">
+                  {s.photo ? (
+                    <img src={s.photo} alt={s.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-blue-200">
+                      <UserCircle size={64} />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Student Name */}
+              <div className="text-center mb-6">
+                <h4 className="text-2xl font-black text-slate-900 uppercase tracking-tight border-b-2 border-blue-600 pb-1 inline-block">
+                  {s.name} {s.surname}
+                </h4>
+              </div>
+
+              {/* Details Grid */}
+              <div className="space-y-3 text-[10px] font-bold text-slate-700">
+                <div className="grid grid-cols-12 gap-1">
+                  <span className="col-span-4 text-slate-500 uppercase tracking-wider">F. NAME :</span>
+                  <span className="col-span-8 uppercase">{s.fatherName}</span>
+                </div>
+                <div className="grid grid-cols-12 gap-1">
+                  <span className="col-span-4 text-slate-500 uppercase tracking-wider">M. NAME :</span>
+                  <span className="col-span-8 uppercase">{s.motherName}</span>
+                </div>
+                <div className="grid grid-cols-12 gap-1">
+                  <span className="col-span-4 text-slate-500 uppercase tracking-wider">PHONE :</span>
+                  <span className="col-span-8">{s.fatherMobile || s.mobile}</span>
+                </div>
+                
+                <div className="grid grid-cols-3 gap-4 pt-2 border-t border-slate-100">
+                  <div>
+                    <p className="text-[8px] text-slate-500 uppercase tracking-widest mb-0.5">Class</p>
+                    <p className="uppercase">{s.class}-{s.section}</p>
+                  </div>
+                  <div>
+                    <p className="text-[8px] text-slate-500 uppercase tracking-widest mb-0.5">Student ID</p>
+                    <p>{s.studentId}</p>
+                  </div>
+                  <div>
+                    <p className="text-[8px] text-slate-500 uppercase tracking-widest mb-0.5">D.O.B.</p>
+                    <p>{s.dob || '01/01/2015'}</p>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-100">
+                  <p className="text-[8px] text-slate-500 uppercase tracking-widest mb-0.5">Address</p>
+                  <p className="uppercase leading-tight text-slate-600">{s.address}</p>
+                </div>
               </div>
             </div>
-            <div className="p-8 text-center relative">
-              <div className="w-24 h-24 rounded-2xl bg-slate-100 mx-auto -mt-20 border-4 border-white shadow-xl flex items-center justify-center text-primary font-black text-3xl mb-4">
-                {s.name[0]}
+
+            {/* Footer Logos */}
+            <div className="bg-slate-50 p-4 border-t border-slate-100 flex justify-between items-center">
+              <div className="flex flex-col items-center gap-1">
+                <div className="w-8 h-4 bg-slate-200 rounded"></div>
+                <span className="text-[6px] font-bold text-slate-400 uppercase">Digital Partner</span>
               </div>
-              <h4 className="text-xl font-black text-text-heading uppercase tracking-tight">{s.name}</h4>
-              <p className="text-[10px] font-black text-primary uppercase tracking-widest mb-6">Student ID: {s.studentId}</p>
-              
-              <div className="grid grid-cols-2 gap-4 text-left mb-6">
-                <div>
-                  <p className="text-[8px] font-black text-text-sub uppercase tracking-widest">Class</p>
-                  <p className="text-xs font-bold text-text-heading">{s.class}-{s.section}</p>
+              <div className="flex flex-col items-center gap-1">
+                <div className="flex gap-1">
+                  <div className="w-3 h-3 bg-blue-600 rounded-full"></div>
+                  <div className="w-3 h-3 bg-blue-400 rounded-full"></div>
                 </div>
-                <div>
-                  <p className="text-[8px] font-black text-text-sub uppercase tracking-widest">Roll No</p>
-                  <p className="text-xs font-bold text-text-heading">{s.rollNo}</p>
-                </div>
-                <div>
-                  <p className="text-[8px] font-black text-text-sub uppercase tracking-widest">Blood Group</p>
-                  <p className="text-xs font-bold text-red-500">{s.bloodGroup}</p>
-                </div>
-                <div>
-                  <p className="text-[8px] font-black text-text-sub uppercase tracking-widest">Contact</p>
-                  <p className="text-xs font-bold text-text-heading">{s.mobile}</p>
-                </div>
+                <span className="text-[6px] font-bold text-slate-400 uppercase">ISO Certified</span>
               </div>
-              
-              <div className="flex items-center justify-center p-4 bg-slate-50 rounded-2xl">
-                <QrCode size={48} className="text-text-heading" />
+              <div className="flex flex-col items-center gap-1">
+                <div className="w-8 h-4 bg-slate-200 rounded"></div>
+                <span className="text-[6px] font-bold text-slate-400 uppercase">Knowledge Partner</span>
               </div>
             </div>
-            <div className="p-4 bg-slate-50 flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
-              <button className="btn-primary flex-1 py-2 text-[10px]"><Printer size={14} /> Print</button>
-              <button className="btn-secondary flex-1 py-2 text-[10px]"><Download size={14} /> Download</button>
+
+            {/* Hover Actions */}
+            <div className="absolute inset-x-0 bottom-0 p-4 bg-blue-600/90 backdrop-blur-sm flex gap-2 translate-y-full group-hover:translate-y-0 transition-transform duration-300">
+              <button className="flex-1 py-2 bg-white text-blue-600 rounded-xl font-bold text-xs flex items-center justify-center gap-2">
+                <Printer size={14} /> Print
+              </button>
+              <button className="flex-1 py-2 bg-blue-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2">
+                <Download size={14} /> Download
+              </button>
             </div>
           </Card>
         ))}

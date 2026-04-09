@@ -213,6 +213,7 @@ export interface FeeMaster {
   feeType: string;
   amount: number;
   frequency: 'Monthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
+  studentType?: 'New' | 'Old' | 'Both';
 }
 
 export interface FeeTransaction {
@@ -231,7 +232,6 @@ export interface FeeTransaction {
   paymentMethod?: string;
   transactionId?: string;
   invoiceNumber?: string;
-  rollNo?: string;
   collectedBy?: string;
   period?: string;
   fine?: number;
@@ -354,7 +354,6 @@ export interface Student {
   class: string;
   section: string;
   studentId: string;
-  rollNo?: string;
   mobile?: string;
   dob?: string;
   caste: string;
@@ -374,6 +373,8 @@ export interface Student {
   hasDisability: boolean;
   disabilityDetails: string;
   photo?: string;
+  rollNumber?: string;
+  studentType: 'New' | 'Old';
   fatherIncomeSource?: string;
   motherIncomeSource?: string;
   residentialAddress?: string;

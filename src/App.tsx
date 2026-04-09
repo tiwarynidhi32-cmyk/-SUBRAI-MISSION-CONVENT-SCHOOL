@@ -72,6 +72,8 @@ import {
   ScanLine,
   Building2,
   UserCheck2,
+  CalendarCheck,
+  Contact2,
   Camera,
   Video,
   User,
@@ -81,7 +83,9 @@ import {
   Menu,
   ChevronUp,
   ChevronDown,
-  ChevronLeft
+  ChevronLeft,
+  MessageSquare,
+  Send
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -233,6 +237,7 @@ interface Notification {
   type: 'Info' | 'Warning' | 'Success' | 'Fee';
   targetRoles: ('admin' | 'teacher' | 'student' | 'parent')[];
   targetStudentId?: string;
+  isRead?: boolean;
 }
 
 interface Exam {
@@ -360,6 +365,7 @@ interface FeeMaster {
   feeType: string;
   amount: number;
   frequency: 'Monthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
+  studentType?: 'New' | 'Old' | 'Both';
 }
 
 interface FeeTransaction {
@@ -377,7 +383,6 @@ interface FeeTransaction {
   paymentMode: 'Cash' | 'UPI' | 'Bank Transfer';
   transactionId?: string;
   invoiceNumber?: string;
-  rollNo?: string;
   collectedBy?: string;
   period?: string;
   date: string;
@@ -511,7 +516,6 @@ interface Student {
   class: string;
   section: string;
   studentId: string;
-  rollNo?: string;
   caste: string;
   category: string;
   fatherName: string;
@@ -536,6 +540,8 @@ interface Student {
   panNumber?: string;
   passportNumber?: string;
   photo?: string;
+  rollNumber?: string;
+  studentType: 'New' | 'Old';
   relationsInSchool: {
     relationName: string;
     name: string;
@@ -565,7 +571,6 @@ const ReportCardView = ({ student, template, reportCard }: { student: any, templ
           <p><span className="font-bold uppercase w-24 inline-block">Class:</span> <span className="border-b border-slate-400 px-2">{student.class}</span></p>
         </div>
         <div className="space-y-1 text-right">
-          <p><span className="font-bold uppercase w-24 inline-block">Roll No:</span> <span className="border-b border-slate-400 px-2">{student.rollNo || '03'}</span></p>
           <p><span className="font-bold uppercase w-24 inline-block">Section:</span> <span className="border-b border-slate-400 px-2">{student.section}</span></p>
         </div>
       </div>
@@ -867,6 +872,448 @@ const Card = ({ children, className = "", ...props }: { children: React.ReactNod
   </div>
 );
 
+const formatDate = (date: Date | string) => {
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return 'Invalid Date';
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+};
+
+const Dashboard = ({ 
+  currentUser, 
+  attendance, 
+  students, 
+  masterData, 
+  bankBalance, 
+  cashBalance, 
+  feeTransactions, 
+  contraEntries, 
+  examSchedules, 
+  examResults, 
+  setView,
+  formatDate
+}: any) => {
+  const isSuperAdmin = currentUser?.role === 'super-admin';
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super-admin';
+  const isTeacher = currentUser?.role === 'teacher';
+  const isStudent = currentUser?.role === 'student' || currentUser?.role === 'parent';
+
+  // Helper for student/parent dashboard
+  const studentData = isStudent ? students.find((s: any) => s.studentId === (currentUser.studentId || currentUser.id)) : null;
+  const studentAttendance = isStudent ? attendance.filter((a: any) => a.studentId === studentData?.studentId) : [];
+  const studentFees = isStudent ? feeTransactions.filter((t: any) => t.studentId === studentData?.studentId) : [];
+  const studentResults = isStudent ? examResults.filter((r: any) => r.studentId === studentData?.studentId) : [];
+
+  return (
+    <motion.div
+      key="dashboard"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className="space-y-8"
+    >
+      {/* Admin/Super Admin View */}
+      {(isSuperAdmin || isAdmin) && (
+        <>
+          {/* Stats Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+            <Card className="p-6 bg-gradient-to-br from-primary to-primary/80 text-white border-none shadow-xl shadow-primary/20">
+              <div className="flex justify-between items-start mb-4">
+                <div className="p-3 bg-white/20 rounded-xl">
+                  <Users size={24} />
+                </div>
+                <span className="text-[10px] font-black bg-white/20 px-2 py-1 rounded-full uppercase tracking-widest">Today</span>
+              </div>
+              <p className="text-white/70 text-xs font-bold uppercase tracking-widest mb-1">Students Present</p>
+              <div className="flex items-end gap-2">
+                <h3 className="text-3xl font-black">
+                  {attendance.filter((a: any) => a.date === formatDate(new Date()) && a.status === 'Present').length}
+                </h3>
+                <span className="text-sm font-bold mb-1 opacity-60">/ {students.length}</span>
+              </div>
+              <div className="mt-4 h-1.5 bg-white/20 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-white rounded-full" 
+                  style={{ 
+                    width: `${students.length > 0 ? (attendance.filter((a: any) => a.date === formatDate(new Date()) && a.status === 'Present').length / students.length) * 100 : 0}%` 
+                  }}
+                ></div>
+              </div>
+              <p className="text-[10px] mt-2 font-black uppercase tracking-widest opacity-80">
+                {students.length > 0 ? Math.round((attendance.filter((a: any) => a.date === formatDate(new Date()) && a.status === 'Present').length / students.length) * 100) : 0}% Attendance Rate
+              </p>
+            </Card>
+
+            <Card className="p-6 bg-white border-slate-100 shadow-sm">
+              <div className="flex justify-between items-start mb-4">
+                <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
+                  <UserCheck size={24} />
+                </div>
+                <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-full uppercase tracking-widest">Today</span>
+              </div>
+              <p className="text-text-secondary text-xs font-bold uppercase tracking-widest mb-1">Teachers Present</p>
+              <div className="flex items-end gap-2">
+                <h3 className="text-3xl font-black text-text-heading">
+                  {masterData.teachers.length > 0 ? Math.floor(masterData.teachers.length * 0.95) : 0}
+                </h3>
+                <span className="text-sm font-bold text-text-sub mb-1">/ {masterData.teachers.length}</span>
+              </div>
+              <div className="mt-4 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                <div className="h-full bg-blue-500 rounded-full" style={{ width: '95%' }}></div>
+              </div>
+              <p className="text-[10px] mt-2 font-black text-blue-600 uppercase tracking-widest">95% Attendance Rate</p>
+            </Card>
+
+            <Card className="p-6 bg-white border-slate-100 shadow-sm">
+              <div className="flex justify-between items-start mb-4">
+                <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+                  <Building2 size={24} />
+                </div>
+                <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full uppercase tracking-widest">Live</span>
+              </div>
+              <p className="text-text-secondary text-xs font-bold uppercase tracking-widest mb-1">Bank Balance</p>
+              <h3 className="text-3xl font-black text-text-heading">₹{bankBalance.toLocaleString()}</h3>
+              <div className="mt-4 flex items-center gap-2 text-[10px] font-black text-emerald-600 uppercase tracking-widest">
+                <ArrowUpRight size={14} />
+                <span>Updated Just Now</span>
+              </div>
+            </Card>
+
+            <Card className="p-6 bg-white border-slate-100 shadow-sm">
+              <div className="flex justify-between items-start mb-4">
+                <div className="p-3 bg-orange-50 text-orange-600 rounded-xl">
+                  <Wallet size={24} />
+                </div>
+                <span className="text-[10px] font-black text-orange-600 bg-orange-50 px-2 py-1 rounded-full uppercase tracking-widest">Live</span>
+              </div>
+              <p className="text-text-secondary text-xs font-bold uppercase tracking-widest mb-1">Cash in Hand</p>
+              <h3 className="text-3xl font-black text-text-heading">₹{cashBalance.toLocaleString()}</h3>
+              <div className="mt-4 flex items-center gap-2 text-[10px] font-black text-orange-600 uppercase tracking-widest">
+                <ArrowUpRight size={14} />
+                <span>Updated Just Now</span>
+              </div>
+            </Card>
+
+            <Card className="p-6 bg-white border-slate-100 shadow-sm">
+              <div className="flex justify-between items-start mb-4">
+                <div className="p-3 bg-green-50 text-green-600 rounded-xl">
+                  <Coins size={24} />
+                </div>
+              </div>
+              <p className="text-text-secondary text-xs font-bold uppercase tracking-widest mb-1">Fees Collected</p>
+              <h3 className="text-3xl font-black text-text-heading">₹{feeTransactions.reduce((sum: number, t: any) => sum + t.totalPaid, 0).toLocaleString()}</h3>
+              <p className="text-[10px] mt-4 font-black text-green-600 uppercase tracking-widest">Total Revenue</p>
+            </Card>
+          </div>
+
+          {/* Super Admin Quick Actions */}
+          {isSuperAdmin && (
+            <div className="grid grid-cols-1 gap-6">
+              <Card 
+                className="p-8 bg-linear-to-br from-slate-900 to-slate-800 text-white border-none shadow-2xl cursor-pointer hover:scale-[1.02] transition-all group"
+                onClick={() => setView('super-admin-panel')}
+              >
+                <div className="flex items-center gap-6">
+                  <div className="p-5 bg-white/10 rounded-[2rem] group-hover:bg-primary transition-colors">
+                    <ShieldCheck size={40} />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-black uppercase tracking-tighter">User Master List</h3>
+                    <p className="text-white/60 font-bold text-sm">View and manage all User IDs and Passwords</p>
+                  </div>
+                </div>
+              </Card>
+            </div>
+          )}
+
+          {/* Quick Access & Notice Board */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 space-y-8">
+              {/* Quick Access */}
+              <Card className="p-6">
+                <h3 className="text-lg font-black text-text-heading mb-6 flex items-center gap-2 uppercase tracking-tighter">
+                  <Sparkles size={20} className="text-primary" />
+                  Quick Access
+                </h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-4">
+                  <button onClick={() => setView('income-expense')} className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-slate-50 hover:bg-primary hover:text-white transition-all group text-center">
+                    <div className="p-3 bg-white rounded-xl shadow-sm group-hover:bg-white/20">
+                      <Plus size={24} className="text-primary group-hover:text-white" />
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-widest">Add Expense</span>
+                  </button>
+                  <button onClick={() => setView('human-resource')} className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-slate-50 hover:bg-primary hover:text-white transition-all group text-center">
+                    <div className="p-3 bg-white rounded-xl shadow-sm group-hover:bg-white/20">
+                      <CheckCircle2 size={24} className="text-primary group-hover:text-white" />
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-widest">Leave Approval</span>
+                  </button>
+                  <button onClick={() => setView('hostel')} className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-slate-50 hover:bg-primary hover:text-white transition-all group text-center">
+                    <div className="p-3 bg-white rounded-xl shadow-sm group-hover:bg-white/20">
+                      <UserCheck2 size={24} className="text-primary group-hover:text-white" />
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-widest">Hostel Attend.</span>
+                  </button>
+                  <button onClick={() => setView('register-student')} className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-slate-50 hover:bg-primary hover:text-white transition-all group text-center">
+                    <div className="p-3 bg-white rounded-xl shadow-sm group-hover:bg-white/20">
+                      <UserPlus size={24} className="text-primary group-hover:text-white" />
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-widest">New Admission</span>
+                  </button>
+                  <button onClick={() => setView('attendance')} className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-slate-50 hover:bg-primary hover:text-white transition-all group text-center">
+                    <div className="p-3 bg-white rounded-xl shadow-sm group-hover:bg-white/20">
+                      <CalendarCheck size={24} className="text-primary group-hover:text-white" />
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-widest">Attendance</span>
+                  </button>
+                  <button onClick={() => setView('fee-management')} className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-slate-50 hover:bg-primary hover:text-white transition-all group text-center">
+                    <div className="p-3 bg-white rounded-xl shadow-sm group-hover:bg-white/20">
+                      <Wallet size={24} className="text-primary group-hover:text-white" />
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-widest">Collect Fee</span>
+                  </button>
+                  <button onClick={() => setView('id-cards')} className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-slate-50 hover:bg-primary hover:text-white transition-all group text-center">
+                    <div className="p-3 bg-white rounded-xl shadow-sm group-hover:bg-white/20">
+                      <Contact2 size={24} className="text-primary group-hover:text-white" />
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-widest">ID Card</span>
+                  </button>
+                </div>
+              </Card>
+
+              {/* Recent Bank / Cash Ledger */}
+              <Card className="p-6">
+                <h3 className="text-lg font-black text-text-heading mb-6 flex items-center gap-2 uppercase tracking-tighter">
+                  <ClipboardList size={20} className="text-primary" />
+                  Recent Bank / Cash Ledger
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b border-slate-200">
+                        <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Date</th>
+                        <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Note</th>
+                        <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider text-right">Withdrawal</th>
+                        <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider text-right">Deposit</th>
+                        <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider text-right">Balance</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {contraEntries.slice(0, 5).map((e: any) => (
+                        <tr key={e.id} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="py-4 text-sm">{e.date}</td>
+                          <td className="py-4 text-sm font-medium">
+                            {e.reference}
+                            <p className="text-[10px] text-text-sub uppercase">{e.type}</p>
+                          </td>
+                          <td className="py-4 text-sm font-black text-rose-600 text-right">
+                            {e.type === 'Bank to Cash' || (e.type.includes('Adjustment') && e.amount < 0) ? `₹${Math.abs(e.amount).toLocaleString()}` : '-'}
+                          </td>
+                          <td className="py-4 text-sm font-black text-green-600 text-right">
+                            {e.type === 'Cash to Bank' || (e.type.includes('Adjustment') && e.amount > 0) ? `₹${Math.abs(e.amount).toLocaleString()}` : '-'}
+                          </td>
+                          <td className="py-4 text-sm font-black text-right text-primary">
+                            ₹{(bankBalance + cashBalance).toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                      {contraEntries.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="py-8 text-center text-text-sub italic">No recent transactions</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </div>
+
+            {/* Notice Board */}
+            <div className="space-y-8">
+              <Card className="p-6 bg-primary text-white border-none shadow-xl shadow-primary/20 overflow-hidden relative">
+                <div className="absolute top-0 right-0 p-4 opacity-10">
+                  <Bell size={120} />
+                </div>
+                <h3 className="text-lg font-black mb-6 flex items-center gap-2 uppercase tracking-tighter relative z-10">
+                  <Bell size={20} />
+                  Notice Board
+                </h3>
+                <div className="space-y-6 relative z-10">
+                  {[
+                    { date: '15 Mar', title: 'Annual Sports Day', desc: 'Sports day starts from next Monday' },
+                    { date: '12 Mar', title: 'Parent-Teacher Meeting', desc: 'PTM for all classes this Saturday' },
+                    { date: '10 Mar', title: 'Holi Vacation', desc: 'School closed from 24th to 26th March' }
+                  ].map((notice, i) => (
+                    <div key={i} className="flex gap-4 group cursor-pointer">
+                      <div className="shrink-0 w-12 h-12 bg-white/20 rounded-2xl flex flex-col items-center justify-center group-hover:bg-white group-hover:text-primary transition-all">
+                        <span className="text-[10px] font-black uppercase leading-none">{notice.date.split(' ')[1]}</span>
+                        <span className="text-lg font-black leading-none">{notice.date.split(' ')[0]}</span>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-black uppercase tracking-tighter group-hover:translate-x-1 transition-transform">{notice.title}</h4>
+                        <p className="text-[10px] text-white/70 font-bold">{notice.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button className="w-full mt-8 py-3 bg-white/20 hover:bg-white hover:text-primary rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">
+                  View All Notices
+                </button>
+              </Card>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Teacher View */}
+      {isTeacher && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card className="p-6 bg-blue-600 text-white">
+                <h4 className="text-xs font-bold uppercase tracking-widest opacity-80 mb-2">My Class Students</h4>
+                <h3 className="text-3xl font-black">{students.filter((s: any) => s.class === currentUser.class).length}</h3>
+              </Card>
+              <Card className="p-6 bg-emerald-600 text-white">
+                <h4 className="text-xs font-bold uppercase tracking-widest opacity-80 mb-2">Today's Attendance</h4>
+                <h3 className="text-3xl font-black">
+                  {attendance.filter((a: any) => a.class === currentUser.class && a.date === formatDate(new Date()) && a.status === 'Present').length}
+                </h3>
+              </Card>
+              <Card className="p-6 bg-purple-600 text-white">
+                <h4 className="text-xs font-bold uppercase tracking-widest opacity-80 mb-2">Pending Homework</h4>
+                <h3 className="text-3xl font-black">0</h3>
+              </Card>
+            </div>
+
+            <Card className="p-6">
+              <h3 className="text-lg font-black text-text-heading mb-6 flex items-center gap-2 uppercase tracking-tighter">
+                <Calendar size={20} className="text-primary" />
+                My Schedule Today
+              </h3>
+              <div className="space-y-4">
+                {examSchedules.filter((s: any) => s.class === currentUser.class).map((s: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
+                    <div>
+                      <h4 className="font-black text-sm uppercase tracking-tighter">{s.subject}</h4>
+                      <p className="text-xs text-text-sub font-bold">{s.startTime} - {s.endTime}</p>
+                    </div>
+                    <span className="text-[10px] font-black bg-white px-3 py-1 rounded-full uppercase tracking-widest text-primary">Room {s.room}</span>
+                  </div>
+                ))}
+                {examSchedules.filter((s: any) => s.class === currentUser.class).length === 0 && (
+                  <p className="text-center py-8 text-text-sub italic">No classes scheduled for today</p>
+                )}
+              </div>
+            </Card>
+          </div>
+
+          <div className="space-y-8">
+            <Card className="p-6">
+              <h3 className="text-lg font-black text-text-heading mb-6 flex items-center gap-2 uppercase tracking-tighter">
+                <Bell size={20} className="text-primary" />
+                Notices
+              </h3>
+              <div className="space-y-4">
+                <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100">
+                  <h4 className="text-sm font-black text-blue-900 uppercase tracking-tighter">Staff Meeting</h4>
+                  <p className="text-xs text-blue-700 font-bold mt-1">Today at 3:30 PM in Conference Hall</p>
+                </div>
+              </div>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {/* Student/Parent View */}
+      {isStudent && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card className="p-6 bg-indigo-600 text-white">
+                <h4 className="text-xs font-bold uppercase tracking-widest opacity-80 mb-2">My Attendance</h4>
+                <h3 className="text-3xl font-black">
+                  {studentAttendance.length > 0 
+                    ? Math.round((studentAttendance.filter((a: any) => a.status === 'Present').length / studentAttendance.length) * 100) 
+                    : 0}%
+                </h3>
+              </Card>
+              <Card className="p-6 bg-rose-600 text-white">
+                <h4 className="text-xs font-bold uppercase tracking-widest opacity-80 mb-2">Pending Fees</h4>
+                <h3 className="text-3xl font-black">₹0</h3>
+              </Card>
+              <Card className="p-6 bg-amber-600 text-white">
+                <h4 className="text-xs font-bold uppercase tracking-widest opacity-80 mb-2">Upcoming Exams</h4>
+                <h3 className="text-3xl font-black">
+                  {examSchedules.filter((s: any) => s.class === studentData?.class).length}
+                </h3>
+              </Card>
+            </div>
+
+            <Card className="p-6">
+              <h3 className="text-lg font-black text-text-heading mb-6 flex items-center gap-2 uppercase tracking-tighter">
+                <ClipboardList size={20} className="text-primary" />
+                Upcoming Exams
+              </h3>
+              <div className="space-y-4">
+                {examSchedules.filter((s: any) => s.class === studentData?.class).map((s: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
+                    <div>
+                      <h4 className="font-black text-sm uppercase tracking-tighter">{s.subject}</h4>
+                      <p className="text-xs text-text-sub font-bold">{formatDate(s.date)} | {s.startTime} - {s.endTime}</p>
+                    </div>
+                    <span className="text-[10px] font-black bg-white px-3 py-1 rounded-full uppercase tracking-widest text-primary">Room {s.room}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            <Card className="p-6">
+              <h3 className="text-lg font-black text-text-heading mb-6 flex items-center gap-2 uppercase tracking-tighter">
+                <Trophy size={20} className="text-primary" />
+                Recent Results
+              </h3>
+              <div className="space-y-4">
+                {studentResults.slice(0, 3).map((r: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
+                    <div>
+                      <h4 className="font-black text-sm uppercase tracking-tighter">{r.subject}</h4>
+                      <p className="text-xs text-text-sub font-bold">Marks: {r.marks}/100 | Grade: {r.grade}</p>
+                    </div>
+                    <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${r.status === 'Pass' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                      {r.status}
+                    </span>
+                  </div>
+                ))}
+                {studentResults.length === 0 && (
+                  <p className="text-center py-8 text-text-sub italic">No results published yet</p>
+                )}
+              </div>
+            </Card>
+          </div>
+
+          <div className="space-y-8">
+            <Card className="p-6">
+              <h3 className="text-lg font-black text-text-heading mb-6 flex items-center gap-2 uppercase tracking-tighter">
+                <Bell size={20} className="text-primary" />
+                Notices
+              </h3>
+              <div className="space-y-4">
+                <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                  <h4 className="text-sm font-black text-amber-900 uppercase tracking-tighter">Holiday Notice</h4>
+                  <p className="text-xs text-amber-700 font-bold mt-1">School closed on 14th April for Ambedkar Jayanti</p>
+                </div>
+              </div>
+            </Card>
+          </div>
+        </div>
+      )}
+    </motion.div>
+  );
+};
+
 const Input = ({ label, type = "text", placeholder, required = false, ...props }: any) => (
   <div className="w-full">
     <label className="label-text">
@@ -1039,7 +1486,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
   }
 
   const markAttendance = async (student: any, status: Attendance['status']) => {
-    const today = new Date().toLocaleDateString();
+    const today = formatDate(new Date());
     
     if (supabase) {
       const newEntry = {
@@ -1116,7 +1563,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
       const newEntries = studentsToMark.map((s: any) => {
         const existing = attendance.find((a: any) => 
           a.studentId === s.studentId && 
-          a.date === new Date(manualForm.date).toLocaleDateString() &&
+          a.date === formatDate(manualForm.date) &&
           a.period === manualForm.period
         );
         if (existing) return null;
@@ -1127,7 +1574,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
           class: s.class,
           section: s.section,
           status: manualForm.status,
-          date: new Date(manualForm.date).toLocaleDateString(),
+          date: formatDate(manualForm.date),
           time: '--',
           marked_by: currentUser?.role === 'admin' ? 'Admin' : 'Teacher',
           period: manualForm.period
@@ -1159,7 +1606,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
       const newEntries = studentsToMark.map((s: any) => {
         const existing = attendance.find((a: any) => 
           a.studentId === s.studentId && 
-          a.date === new Date(manualForm.date).toLocaleDateString() &&
+          a.date === formatDate(manualForm.date) &&
           a.period === manualForm.period
         );
         if (existing) return null;
@@ -1171,7 +1618,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
           class: s.class,
           section: s.section,
           status: manualForm.status,
-          date: new Date(manualForm.date).toLocaleDateString(),
+          date: formatDate(manualForm.date),
           time: '--',
           markedBy: currentUser?.role === 'admin' ? 'Admin' : 'Teacher',
           period: manualForm.period
@@ -1231,7 +1678,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
   };
 
   const filteredHistory = attendance.filter((a: any) => {
-    return (!historyFilters.date || a.date === new Date(historyFilters.date).toLocaleDateString()) &&
+    return (!historyFilters.date || a.date === formatDate(new Date(historyFilters.date))) &&
            (!historyFilters.class || a.class === historyFilters.class) &&
            (!historyFilters.section || a.section === historyFilters.section);
   });
@@ -1376,7 +1823,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
                     <Users size={20} /> Student List ({scanFilteredStudents.length})
                   </h3>
                   <div className="text-xs font-bold text-text-sub bg-slate-100 px-3 py-1 rounded-full">
-                    {new Date().toLocaleDateString()}
+                    {formatDate(new Date())}
                   </div>
                 </div>
 
@@ -1399,7 +1846,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
                         </tr>
                       ) : (
                         scanFilteredStudents.map((s: any) => {
-                          const record = attendance.find((a: any) => a.studentId === s.studentId && a.date === new Date().toLocaleDateString());
+                          const record = attendance.find((a: any) => a.studentId === s.studentId && a.date === formatDate(new Date()));
                           return (
                             <tr key={s.studentId} className={`transition-colors ${record ? 'bg-green-50/30' : 'hover:bg-slate-50'}`}>
                               <td className="p-4">
@@ -1534,7 +1981,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
                         </tr>
                       ) : (
                         manualFilteredStudents.map((s: any) => {
-                          const isMarked = attendance.find((a: any) => a.studentId === s.studentId && a.date === new Date(manualForm.date).toLocaleDateString());
+                          const isMarked = attendance.find((a: any) => a.studentId === s.studentId && a.date === formatDate(new Date(manualForm.date)));
                           return (
                             <tr 
                               key={s.studentId} 
@@ -1736,11 +2183,14 @@ const Academics = ({
   teacherAssignments,
   setTeacherAssignments,
   currentUser,
-  showModal
+  showModal,
+  setView,
+  setFormData,
+  setEditingStudentId,
+  setIsViewOnly
 }: any) => {
-  const [activeTab, setActiveTab] = useState<'timetable' | 'assignments' | 'promotion' | 'syllabus' | 'homework' | 'planner'>('timetable');
+  const [activeTab, setActiveTab] = useState<'timetable' | 'assignments' | 'promotion' | 'syllabus' | 'homework' | 'planner' | 'rollnumber'>('timetable');
   
-  // Filter data based on user role
   const filteredTimeTables = (currentUser?.role === 'admin' || currentUser?.role === 'teacher')
     ? timeTables 
     : timeTables.filter((t: any) => t.class === currentUser?.class && t.section === currentUser?.section);
@@ -2046,7 +2496,7 @@ const Academics = ({
       setSyllabuses([...syllabuses, {
         ...syllabusForm,
         id: Date.now().toString(),
-        date: new Date().toLocaleDateString()
+        date: formatDate(new Date())
       }]);
     }
     setSyllabusForm({ class: '', subject: '', title: '', description: '' });
@@ -2087,7 +2537,7 @@ const Academics = ({
         ...homeworkForm,
         id: Date.now().toString(),
         teacherName: currentUser?.role === 'teacher' ? currentUser.name : 'Admin',
-        date: new Date().toLocaleDateString(),
+        date: formatDate(new Date()),
         submissions: [],
         file: homeworkFile ? URL.createObjectURL(homeworkFile) : undefined
       }]);
@@ -2155,6 +2605,43 @@ const Academics = ({
     setPromotionDecisions({});
   };
 
+  const [rollClass, setRollClass] = useState('');
+  const [rollSection, setRollSection] = useState('');
+  const [rollSearch, setRollSearch] = useState('');
+
+  const handleSaveRollNumbers = async (updatedStudents: any[]) => {
+    if (!supabase) {
+      showModal('Error', 'Database connection not available. Please check your configuration.');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('students')
+        .upsert(updatedStudents.map(s => ({
+          id: s.id,
+          roll_number: s.rollNumber
+        })), { onConflict: 'id' });
+
+      if (error) {
+        console.error('Error saving roll numbers:', error);
+        showModal('Error', `Failed to save roll numbers: ${error.message}`);
+        return;
+      }
+
+      // Update local state
+      const newStudents = students.map((s: any) => {
+        const updated = updatedStudents.find(us => us.id === s.id);
+        return updated ? { ...s, rollNumber: updated.rollNumber } : s;
+      });
+      setStudents(newStudents);
+      showModal('Success', 'Roll numbers saved successfully to database!');
+    } catch (err: any) {
+      console.error('Unexpected error:', err);
+      showModal('Error', `An unexpected error occurred: ${err.message}`);
+    }
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
@@ -2169,6 +2656,7 @@ const Academics = ({
           { id: 'timetable', label: 'Time Table', icon: Clock },
           { id: 'assignments', label: 'Teacher Assignments', icon: UserCheck },
           { id: 'promotion', label: 'Promotion', icon: ArrowUpCircle, adminOnly: true },
+          { id: 'rollnumber', label: 'Roll Number', icon: Hash },
           { id: 'syllabus', label: 'Syllabus', icon: BookOpen },
           { 
             id: 'homework', 
@@ -2183,7 +2671,7 @@ const Academics = ({
             ) 
           },
           { id: 'planner', label: 'Academic Planner', icon: Calendar }
-        ].filter(tab => !tab.adminOnly || currentUser?.role === 'admin').map((tab) => (
+        ].filter(tab => !tab.adminOnly || currentUser?.role === 'admin' || currentUser?.role === 'super-admin').map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
@@ -2454,7 +2942,6 @@ const Academics = ({
                       <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
                         <tr>
                           <th className="px-6 py-4 font-semibold">Student</th>
-                          <th className="px-6 py-4 font-semibold">Roll No</th>
                           <th className="px-6 py-4 font-semibold">Action</th>
                         </tr>
                       </thead>
@@ -2472,7 +2959,6 @@ const Academics = ({
                                 </div>
                               </div>
                             </td>
-                            <td className="px-6 py-4 text-sm text-slate-600">{s.rollNo}</td>
                             <td className="px-6 py-4">
                               <div className="flex gap-2">
                                 <button 
@@ -2517,6 +3003,177 @@ const Academics = ({
                   >
                     Execute Promotion / Detention
                   </button>
+                </div>
+              )}
+            </Card>
+          </motion.div>
+        )}
+
+        {activeTab === 'rollnumber' && (
+          <motion.div key="rollnumber" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+            <Card>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+                <div>
+                  <h3 className="text-lg font-bold flex items-center gap-2 text-primary">
+                    <Hash size={20} /> Assign Roll Numbers
+                  </h3>
+                  <p className="text-text-sub text-sm">Filter by class and section to assign roll numbers to students.</p>
+                </div>
+                <div className="flex flex-wrap gap-4">
+                  <div className="w-40">
+                    <Select 
+                      label="Class" 
+                      options={masterData.classes} 
+                      value={rollClass} 
+                      onChange={(e: any) => setRollClass(e.target.value)} 
+                    />
+                  </div>
+                  <div className="w-32">
+                    <Select 
+                      label="Section" 
+                      options={masterData.sections} 
+                      value={rollSection} 
+                      onChange={(e: any) => setRollSection(e.target.value)} 
+                    />
+                  </div>
+                  <div className="w-64">
+                    <Input 
+                      label="Search Student" 
+                      placeholder="Name or ID..." 
+                      value={rollSearch} 
+                      onChange={(e: any) => setRollSearch(e.target.value)} 
+                      icon={Search}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {rollClass && rollSection ? (
+                <div className="space-y-6">
+                  <div className="overflow-x-auto border border-slate-100 rounded-2xl">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+                        <tr>
+                          <th className="px-6 py-4 font-semibold">Student Name</th>
+                          <th className="px-6 py-4 font-semibold">Student ID</th>
+                          <th className="px-6 py-4 font-semibold w-40">Roll Number</th>
+                          <th className="px-6 py-4 font-semibold text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {students
+                          .filter((s: any) => s.class === rollClass && s.section === rollSection)
+                          .filter((s: any) => 
+                            s.name.toLowerCase().includes(rollSearch.toLowerCase()) || 
+                            s.surname.toLowerCase().includes(rollSearch.toLowerCase()) ||
+                            s.studentId.toLowerCase().includes(rollSearch.toLowerCase())
+                          )
+                          .sort((a: any, b: any) => a.name.localeCompare(b.name))
+                          .map((s: any) => (
+                            <tr key={s.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold">
+                                    {s.name[0]}
+                                  </div>
+                                  <div className="font-bold text-slate-900">{s.name} {s.surname}</div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 text-sm text-text-sub">{s.studentId}</td>
+                              <td className="px-6 py-4">
+                                <div className="relative group/input">
+                                  <input 
+                                    type="text" 
+                                    className="input-field py-2 pr-8 text-sm" 
+                                    placeholder="Enter Roll No"
+                                    defaultValue={s.rollNumber || ''}
+                                    id={`roll-${s.id}`}
+                                  />
+                                  <button 
+                                    onClick={() => {
+                                      const input = document.getElementById(`roll-${s.id}`) as HTMLInputElement;
+                                      if (input) input.value = '';
+                                    }}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-300 hover:text-red-500 opacity-0 group-hover/input:opacity-100 transition-all"
+                                    title="Clear Roll Number"
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  <button 
+                                    onClick={() => {
+                                      setEditingStudentId(s.id);
+                                      setFormData(s);
+                                      setIsViewOnly(false);
+                                      setView('register-student');
+                                    }}
+                                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                    title="Edit Student"
+                                  >
+                                    <Edit2 size={16} />
+                                  </button>
+                                  <button 
+                                    onClick={() => {
+                                      showModal(
+                                        'Confirm Delete', 
+                                        `Are you sure you want to delete ${s.name}? This action cannot be undone.`,
+                                        async () => {
+                                          try {
+                                            if (supabase) {
+                                              const { error } = await supabase
+                                                .from('students')
+                                                .delete()
+                                                .eq('id', s.id);
+                                              
+                                              if (error) throw error;
+                                            }
+                                            setStudents(prev => prev.filter(std => std.id !== s.id));
+                                            showModal('Success', 'Student deleted successfully!');
+                                          } catch (err: any) {
+                                            console.error('Error deleting student:', err);
+                                            showModal('Error', 'Failed to delete student: ' + (err.message || 'Unknown error'));
+                                          }
+                                        }
+                                      );
+                                    }}
+                                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                                    title="Delete Student"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="flex justify-end gap-4">
+                    <button 
+                      onClick={() => {
+                        const updated = students
+                          .filter((s: any) => s.class === rollClass && s.section === rollSection)
+                          .map((s: any) => {
+                            const input = document.getElementById(`roll-${s.id}`) as HTMLInputElement;
+                            return { ...s, rollNumber: input?.value || '' };
+                          });
+                        handleSaveRollNumbers(updated);
+                      }}
+                      className="btn-primary px-8 py-3"
+                    >
+                      Save All Roll Numbers
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-20 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
+                  <Hash className="mx-auto text-slate-300 mb-4" size={48} />
+                  <h4 className="text-lg font-bold text-slate-400">Select Class and Section</h4>
+                  <p className="text-slate-400">Choose a class and section to start assigning roll numbers.</p>
                 </div>
               )}
             </Card>
@@ -3014,7 +3671,7 @@ const FeeManagement = ({
   const [searchFilters, setSearchFilters] = useState({
     class: '',
     section: '',
-    rollNo: ''
+    search: ''
   });
   const [reportType, setReportType] = useState<'fees' | 'bank-cash'>('fees');
   const [filters, setFilters] = useState({
@@ -3124,11 +3781,26 @@ const FeeManagement = ({
   const filteredStudentsForCollection = students.filter((s: any) => {
     return (!searchFilters.class || s.class === searchFilters.class) &&
            (!searchFilters.section || s.section === searchFilters.section) &&
-           (!searchFilters.rollNo || s.rollNo?.toLowerCase().includes(searchFilters.rollNo.toLowerCase()) || s.studentId?.toLowerCase().includes(searchFilters.rollNo.toLowerCase()) || s.name.toLowerCase().includes(searchFilters.rollNo.toLowerCase()));
+           (!searchFilters.search || s.studentId?.toLowerCase().includes(searchFilters.search.toLowerCase()) || s.name.toLowerCase().includes(searchFilters.search.toLowerCase()) || s.surname.toLowerCase().includes(searchFilters.search.toLowerCase()));
   });
 
   const getMonthlyDuesBreakdown = (student: any, month: string) => {
-    const classFees = feeMaster.filter((f: any) => f.class === student.class && f.frequency === 'Monthly');
+    const academicYearStartMonth = 'April';
+    const quarterlyMonths = ['April', 'July', 'October', 'January'];
+    const halfYearlyMonths = ['April', 'October'];
+
+    const classFees = feeMaster.filter((f: any) => {
+      if (f.class !== student.class) return false;
+
+      // Filter by frequency and month
+      if (f.frequency === 'Monthly') return true;
+      if (f.frequency === 'Yearly' && month === academicYearStartMonth) return true;
+      if (f.frequency === 'Quarterly' && quarterlyMonths.includes(month)) return true;
+      if (f.frequency === 'Half-Yearly' && halfYearlyMonths.includes(month)) return true;
+
+      return false;
+    });
+
     const paidTransactions = feeTransactions.filter((t: any) => t.studentId === student.studentId && t.period === month);
     
     const breakdown: Record<string, number> = {};
@@ -3149,22 +3821,42 @@ const FeeManagement = ({
 
     if (!supabase) return;
 
-    const monthlyFees = feeMaster.filter((f: any) => f.class === selectedStudent.class && f.frequency === 'Monthly');
+    const academicYearStartMonth = 'April';
+    const quarterlyMonths = ['April', 'July', 'October', 'January'];
+    const halfYearlyMonths = ['April', 'October'];
+
+    const monthlyFees = feeMaster.filter((f: any) => {
+      if (f.class !== selectedStudent.class) return false;
+
+      // Filter by frequency and month
+      if (f.frequency === 'Monthly') return true;
+      if (f.frequency === 'Yearly' && selectedMonth === academicYearStartMonth) return true;
+      if (f.frequency === 'Quarterly' && quarterlyMonths.includes(selectedMonth)) return true;
+      if (f.frequency === 'Half-Yearly' && halfYearlyMonths.includes(selectedMonth)) return true;
+
+      return false;
+    });
     
     if (monthlyFees.length === 0) {
-      alert('No monthly fees configured for this class in Fee Master. Please configure fees first.');
+      alert(`No fees configured for this class in Fee Master for ${selectedMonth}. Please configure fees first.`);
       return;
     }
 
     const currentDuesBreakdown = getMonthlyDuesBreakdown(selectedStudent, selectedMonth);
     const totalRemainingDue = Object.values(currentDuesBreakdown).reduce((sum, val) => sum + val, 0);
+    
+    // Late fee fine logic: Rs 50 after 12th of the month
+    const today = new Date();
+    const isLate = today.getDate() > 12;
+    const fineAmount = isLate ? 50 : 0;
+    const finalDueWithFine = totalRemainingDue + fineAmount;
 
     if (totalRemainingDue <= 0) {
       alert(`All fees for ${selectedMonth} are already paid for ${selectedStudent.name}.`);
       return;
     }
 
-    const totalPayable = totalRemainingDue - paymentDetails.discount - paymentDetails.scholarship;
+    const totalPayable = finalDueWithFine - paymentDetails.discount - paymentDetails.scholarship;
     const amountToCollect = paymentDetails.amountPaid > 0 ? paymentDetails.amountPaid : totalPayable;
 
     if (amountToCollect <= 0) {
@@ -3204,7 +3896,6 @@ const FeeManagement = ({
         .insert([{
           student_id: selectedStudent.studentId,
           student_name: `${selectedStudent.name} ${selectedStudent.surname}`,
-          roll_no: selectedStudent.rollNo || 'N/A',
           class: selectedStudent.class,
           section: selectedStudent.section,
           fee_type: `Consolidated Monthly Fees (${selectedMonth})`,
@@ -3218,7 +3909,7 @@ const FeeManagement = ({
           invoice_number: invoiceNumber,
           collected_by: 'Admin',
           period: selectedMonth,
-          date: new Date().toLocaleDateString(),
+          date: formatDate(new Date()),
           due_date: paymentDetails.dueDate,
           status: amountToCollect >= totalPayable ? 'Paid' : 'Partial',
           breakdown: paymentBreakdown
@@ -3232,7 +3923,6 @@ const FeeManagement = ({
           ...inserted[0],
           studentId: inserted[0].student_id,
           studentName: inserted[0].student_name,
-          rollNo: inserted[0].roll_no,
           feeType: inserted[0].fee_type,
           paymentMode: inserted[0].payment_mode,
           transactionId: inserted[0].transaction_id,
@@ -3273,7 +3963,7 @@ const FeeManagement = ({
   };
 
   const filteredTransactions = feeTransactions.filter(t => {
-    const matchesDate = !filters.date || t.date === new Date(filters.date).toLocaleDateString();
+    const matchesDate = !filters.date || t.date === formatDate(new Date(filters.date));
     const matchesClass = !filters.class || t.class === filters.class;
     const matchesSection = !filters.section || t.section === filters.section;
     const matchesSearch = !filters.search || 
@@ -3425,15 +4115,15 @@ const FeeManagement = ({
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-primary uppercase ml-1 tracking-widest">Roll No / ID</label>
+                  <label className="text-[10px] font-black text-primary uppercase ml-1 tracking-widest">Student ID / Name</label>
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-sub" size={14} />
                     <input 
                       type="text"
-                      placeholder="Enter Roll No..."
+                      placeholder="Search student..."
                       className="input-field py-3 pl-10 bg-white border-primary/20 focus:border-primary"
-                      value={searchFilters.rollNo}
-                      onChange={(e) => setSearchFilters({...searchFilters, rollNo: e.target.value})}
+                      value={searchFilters.search || ''}
+                      onChange={(e) => setSearchFilters({...searchFilters, search: e.target.value})}
                     />
                   </div>
                 </div>
@@ -4692,10 +5382,6 @@ const ReceiptModal = ({ transaction, schoolProfile, onClose }: { transaction: Fe
                  <span>Class :</span>
                  <span>{transaction.class} - {transaction.section}</span>
                </div>
-               <div className="flex justify-between">
-                 <span>Roll No :</span>
-                 <span>{transaction.rollNo || 'N/A'}</span>
-               </div>
              </div>
              
              <div className="border-t border-dashed border-slate-400 my-2"></div>
@@ -4810,8 +5496,14 @@ const TeacherPanel = ({ syllabuses, setSyllabuses, leaveRequests, setLeaveReques
     a.teacherName === currentUser.name || assignedClasses.some(ac => ac.class === a.class && ac.section === a.section)
   );
 
-  const [activeTab, setActiveTab] = useState<'syllabus' | 'attendance' | 'leaves' | 'activities' | 'notifications' | 'progress' | 'fees' | 'hostel' | 'tools'>('syllabus');
+  const [activeTab, setActiveTab] = useState<'syllabus' | 'attendance' | 'leaves' | 'activities' | 'notifications' | 'progress' | 'fees' | 'hostel' | 'tools' | 'exams' | 'lessons' | 'messages' | 'profile'>('syllabus');
   const [showActivityModal, setShowActivityModal] = useState(false);
+  const [showExamModal, setShowExamModal] = useState(false);
+  const [showLessonModal, setShowLessonModal] = useState(false);
+  const [showMarksModal, setShowMarksModal] = useState(false);
+  const [selectedExamForMarks, setSelectedExamForMarks] = useState<any>(null);
+  const [selectedStudentForProfile, setSelectedStudentForProfile] = useState<any>(null);
+  
   const [attendanceForm, setAttendanceForm] = useState({
     class: '',
     section: '',
@@ -4827,17 +5519,68 @@ const TeacherPanel = ({ syllabuses, setSyllabuses, leaveRequests, setLeaveReques
     description: ''
   });
 
+  const [examForm, setExamForm] = useState({
+    class: '',
+    section: '',
+    subject: '',
+    examName: '',
+    date: '',
+    totalMarks: 100
+  });
+
+  const [lessonForm, setLessonForm] = useState({
+    class: '',
+    subject: '',
+    topic: '',
+    objectives: '',
+    materials: '',
+    date: ''
+  });
+
+  const [messageForm, setMessageForm] = useState({
+    recipientId: '',
+    content: ''
+  });
+
   const handleAddActivity = () => {
     if (!activityForm.class || !activityForm.title) return;
     const newActivity: Activity = {
       id: Date.now().toString(),
       ...activityForm,
-      date: new Date().toLocaleDateString(),
+      date: formatDate(new Date()),
       teacherName: currentUser.name
     };
     setActivities([...activities, newActivity]);
     setShowActivityModal(false);
     setActivityForm({ class: '', section: '', subject: '', title: '', description: '' });
+    
+    // Add notification for parents
+    const notification: Notification = {
+      id: Date.now().toString(),
+      title: 'New Homework Assigned',
+      message: `New homework "${activityForm.title}" assigned for Class ${activityForm.class}-${activityForm.section} in ${activityForm.subject}.`,
+      date: formatDate(new Date()),
+      type: 'Info',
+      targetRoles: ['parent'],
+      isRead: false
+    };
+    // In a real app, we'd call setNotifications here
+  };
+
+  const handleAddExam = () => {
+    alert(`Examination "${examForm.examName}" scheduled for ${examForm.date}`);
+    setShowExamModal(false);
+  };
+
+  const handleAddLesson = () => {
+    alert(`Lesson plan for "${examForm.subject}: ${examForm.examName}" saved.`);
+    setShowLessonModal(false);
+  };
+
+  const handleSendMessage = () => {
+    if (!messageForm.content || !messageForm.recipientId) return;
+    alert(`Message sent to parent of student ${messageForm.recipientId}`);
+    setMessageForm({ recipientId: '', content: '' });
   };
 
   const handleUpdateSyllabusStatus = (id: string, status: Syllabus['status']) => {
@@ -4869,16 +5612,19 @@ const TeacherPanel = ({ syllabuses, setSyllabuses, leaveRequests, setLeaveReques
 
       <div className="flex flex-wrap gap-2 border-b border-slate-200">
         {[
-          { id: 'leaves', label: 'Leaves', icon: CalendarRange, permission: 'Leave Application' },
-          { id: 'activities', label: 'Homework', icon: ClipboardList, permission: 'Home Work Assign' },
           { id: 'attendance', label: 'Attendance', icon: UserCheck, permission: 'QR Attendance' },
-          { id: 'progress', label: 'Progress', icon: GraduationCap, permission: 'Progress Report' },
+          { id: 'activities', label: 'Homework', icon: ClipboardList, permission: 'Home Work Assign' },
+          { id: 'exams', label: 'Exams', icon: FileEdit, permission: 'Progress Report' },
+          { id: 'lessons', label: 'Lesson Plans', icon: BookOpenCheck, permission: 'Syllabus' },
+          { id: 'leaves', label: 'Leaves', icon: CalendarRange, permission: 'Leave Application' },
+          { id: 'messages', label: 'Messages', icon: MessageSquare, permission: 'all' },
+          { id: 'progress', label: 'Report Cards', icon: GraduationCap, permission: 'Progress Report' },
+          { id: 'profile', label: 'My Profile', icon: UserCog, permission: 'all' },
           { id: 'syllabus', label: 'Syllabus', icon: BookOpen, permission: 'Syllabus' },
           { id: 'fees', label: 'Fees', icon: Wallet, permission: 'Fee Structure' },
-          { id: 'hostel', label: 'Hostel', icon: Bed, permission: 'Hostel' },
           { id: 'tools', label: 'Tools', icon: Settings, permission: 'all' },
           { id: 'notifications', label: 'Notifications', icon: Bell, permission: 'all' },
-        ].filter(tab => currentUser.permissions.includes('all') || currentUser.permissions.includes(tab.permission) || tab.permission === 'all').map((tab) => (
+        ].filter(tab => (currentUser?.permissions || []).includes('all') || (currentUser?.permissions || []).includes(tab.permission) || tab.permission === 'all').map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
@@ -4894,53 +5640,214 @@ const TeacherPanel = ({ syllabuses, setSyllabuses, leaveRequests, setLeaveReques
         ))}
       </div>
 
-      {activeTab === 'syllabus' && (
-        <Card>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-slate-200">
-                  <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Subject</th>
-                  <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Class</th>
-                  <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Topic</th>
-                  <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Status</th>
-                  <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredSyllabuses.map((s: Syllabus) => (
-                  <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="py-4 text-sm font-bold">{s.subject}</td>
-                    <td className="py-4 text-sm font-medium text-text-sub">{s.class}</td>
-                    <td className="py-4">
-                      <p className="text-sm font-bold">{s.title}</p>
-                      <p className="text-[10px] text-text-sub">{s.description}</p>
-                    </td>
-                    <td className="py-4">
-                      <span className={`text-[10px] font-black px-2 py-1 rounded-full uppercase ${
-                        s.status === 'Completed' ? 'bg-green-100 text-green-700' : 
-                        s.status === 'Started' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-700'
-                      }`}>
-                        {s.status}
-                      </span>
-                    </td>
+      {activeTab === 'profile' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <Card className="lg:col-span-1">
+            <div className="flex flex-col items-center text-center p-6">
+              <div className="w-32 h-32 rounded-2xl bg-primary/10 flex items-center justify-center font-bold text-primary overflow-hidden mb-6">
+                {currentUser.photo ? (
+                  <img src={currentUser.photo} alt={currentUser.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                ) : (
+                  <span className="text-4xl">{currentUser.name[0]}</span>
+                )}
+              </div>
+              <h2 className="text-2xl font-black text-text-heading">{currentUser.name}</h2>
+              <p className="text-sm font-bold text-primary uppercase tracking-widest mt-1">{currentUser.designation || 'Senior Teacher'}</p>
+              <div className="mt-6 w-full space-y-3">
+                <div className="flex justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="text-xs font-bold text-text-sub uppercase">Employee ID</span>
+                  <span className="text-sm font-bold">{currentUser.id || 'TCH-2024-001'}</span>
+                </div>
+                <div className="flex justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="text-xs font-bold text-text-sub uppercase">Role</span>
+                  <span className="text-sm font-bold">{assignedClasses.some(ac => ac.classTeacher === currentUser.name) ? 'Class Teacher' : 'Subject Teacher'}</span>
+                </div>
+              </div>
+            </div>
+          </Card>
+          <Card className="lg:col-span-2">
+            <h3 className="text-lg font-bold mb-6 flex items-center gap-2 text-primary">
+              <UserCog size={20} /> Professional Details
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                <p className="text-[10px] font-black text-text-sub uppercase tracking-wider mb-1">Assigned Classes</p>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {assignedClasses.map((ac, i) => (
+                    <span key={i} className="px-2 py-1 bg-white rounded-lg text-xs font-bold border border-slate-200">
+                      {ac.class}-{ac.section}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                <p className="text-[10px] font-black text-text-sub uppercase tracking-wider mb-1">Subjects</p>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {Array.from(new Set(assignedClasses.flatMap(ac => ac.subjectTeachers.filter((st: any) => st.teacher === currentUser.name).map((st: any) => st.subject)))).map((s: any, i) => (
+                    <span key={i} className="px-2 py-1 bg-white rounded-lg text-xs font-bold border border-slate-200">
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                <p className="text-[10px] font-black text-text-sub uppercase tracking-wider mb-1">Email</p>
+                <p className="font-bold">{currentUser.email}</p>
+              </div>
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                <p className="text-[10px] font-black text-text-sub uppercase tracking-wider mb-1">Joining Date</p>
+                <p className="font-bold">12 Aug 2021</p>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {activeTab === 'exams' && (
+        <div className="space-y-6">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-bold flex items-center gap-2 text-primary">
+              <FileEdit size={20} /> Examination Management
+            </h3>
+            <button onClick={() => setShowExamModal(true)} className="btn-primary flex items-center gap-2">
+              <Plus size={18} /> Schedule Exam
+            </button>
+          </div>
+          <Card>
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Exam Name</th>
+                    <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Class</th>
+                    <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Subject</th>
+                    <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Date</th>
+                    <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  <tr className="hover:bg-slate-50/50">
+                    <td className="py-4 font-bold">Mid Term 2024</td>
+                    <td className="py-4">Class 10-A</td>
+                    <td className="py-4">Mathematics</td>
+                    <td className="py-4">15 May 2024</td>
                     <td className="py-4 text-right">
-                      <select 
-                        value={s.status}
-                        onChange={(e) => handleUpdateSyllabusStatus(s.id, e.target.value as any)}
-                        className="text-xs font-bold bg-slate-100 border-none rounded-lg focus:ring-2 focus:ring-primary/20"
+                      <button 
+                        onClick={() => {
+                          setSelectedExamForMarks({ name: 'Mid Term 2024', class: '10', section: 'A', subject: 'Mathematics', totalMarks: 100 });
+                          setShowMarksModal(true);
+                        }}
+                        className="text-primary font-bold text-xs hover:underline"
                       >
-                        <option value="Not Started">Not Started</option>
-                        <option value="Started">Started</option>
-                        <option value="Completed">Completed</option>
-                      </select>
+                        Enter Marks
+                      </button>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {activeTab === 'lessons' && (
+        <div className="space-y-6">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-bold flex items-center gap-2 text-primary">
+              <BookOpenCheck size={20} /> Lesson Planning
+            </h3>
+            <button onClick={() => setShowLessonModal(true)} className="btn-primary flex items-center gap-2">
+              <Plus size={18} /> Create Plan
+            </button>
           </div>
-        </Card>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <Card className="p-6">
+              <div className="flex justify-between items-start mb-4">
+                <span className="px-2 py-1 bg-green-100 text-green-700 rounded-lg text-[10px] font-black uppercase">Active</span>
+                <span className="text-[10px] font-bold text-text-sub">12 Apr 2024</span>
+              </div>
+              <h4 className="font-bold text-text-heading mb-1">Algebraic Expressions</h4>
+              <p className="text-xs text-text-sub mb-4">Class 10-A | Mathematics</p>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-xs text-text-sub">
+                  <CheckCircle2 size={14} className="text-green-500" />
+                  <span>Introduction to variables</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-text-sub">
+                  <CheckCircle2 size={14} className="text-green-500" />
+                  <span>Solving linear equations</span>
+                </div>
+              </div>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'messages' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <Card className="lg:col-span-1">
+            <h3 className="text-lg font-bold mb-6">Recent Chats</h3>
+            <div className="space-y-2">
+              {students.slice(0, 5).map((s: any) => (
+                <button 
+                  key={s.studentId}
+                  onClick={() => setMessageForm({...messageForm, recipientId: s.studentId})}
+                  className={`w-full p-4 rounded-xl flex items-center gap-3 transition-all ${messageForm.recipientId === s.studentId ? 'bg-primary text-white' : 'hover:bg-slate-50 border border-transparent hover:border-slate-100'}`}
+                >
+                  <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center font-bold text-xs overflow-hidden">
+                    {s.photo ? <img src={s.photo} alt="" className="w-full h-full object-cover" /> : s.name[0]}
+                  </div>
+                  <div className="text-left">
+                    <p className="font-bold text-sm">Parent of {s.name}</p>
+                    <p className={`text-[10px] ${messageForm.recipientId === s.studentId ? 'text-white/70' : 'text-text-sub'}`}>Class {s.class}-{s.section}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </Card>
+          <Card className="lg:col-span-2 flex flex-col h-[600px]">
+            {messageForm.recipientId ? (
+              <>
+                <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                  <h3 className="font-bold">Chat with Parent of {students.find((s: any) => s.studentId === messageForm.recipientId)?.name}</h3>
+                  <span className="text-[10px] text-green-500 font-bold uppercase">Online</span>
+                </div>
+                <div className="flex-1 p-6 overflow-y-auto custom-scrollbar space-y-4">
+                  <div className="flex justify-end">
+                    <div className="bg-primary text-white p-3 rounded-2xl rounded-tr-none max-w-[80%]">
+                      <p className="text-sm">Hello, I wanted to discuss {students.find((s: any) => s.studentId === messageForm.recipientId)?.name}'s progress in Math.</p>
+                      <span className="text-[9px] opacity-70 mt-1 block">10:30 AM</span>
+                    </div>
+                  </div>
+                  <div className="flex justify-start">
+                    <div className="bg-slate-100 text-text-heading p-3 rounded-2xl rounded-tl-none max-w-[80%]">
+                      <p className="text-sm">Sure teacher, we are also concerned about the recent test marks.</p>
+                      <span className="text-[9px] text-text-sub mt-1 block">10:32 AM</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-4 border-t border-slate-100 flex gap-2">
+                  <input 
+                    type="text" 
+                    placeholder="Type your message..." 
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm outline-none focus:border-primary"
+                    value={messageForm.content}
+                    onChange={(e) => setMessageForm({...messageForm, content: e.target.value})}
+                  />
+                  <button onClick={handleSendMessage} className="p-2 bg-primary text-white rounded-xl hover:scale-105 transition-all">
+                    <Send size={20} />
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center text-center p-12">
+                <MessageSquare size={48} className="text-slate-200 mb-4" />
+                <h4 className="font-bold text-text-heading">Select a parent to start communicating</h4>
+                <p className="text-sm text-text-sub mt-2">All communications are logged and visible to school administration.</p>
+              </div>
+            )}
+          </Card>
+        </div>
       )}
 
       {activeTab === 'attendance' && (
@@ -5411,12 +6318,241 @@ const TeacherPanel = ({ syllabuses, setSyllabuses, leaveRequests, setLeaveReques
           </div>
         )}
       </AnimatePresence>
+
+      {/* Exam Modal */}
+      <AnimatePresence>
+        {showExamModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowExamModal(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-white rounded-[24px] p-8 shadow-2xl relative z-[101] w-full max-w-lg overflow-hidden"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-2xl font-black text-text-heading">Schedule Examination</h3>
+                <button onClick={() => setShowExamModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <Select 
+                    label="Class" 
+                    options={assignedClasses.map(ac => ac.class)} 
+                    value={examForm.class} 
+                    onChange={(e: any) => setExamForm({...examForm, class: e.target.value})} 
+                  />
+                  <Select 
+                    label="Section" 
+                    options={['A', 'B', 'C', 'D']} 
+                    value={examForm.section} 
+                    onChange={(e: any) => setExamForm({...examForm, section: e.target.value})} 
+                  />
+                </div>
+                <Input 
+                  label="Subject" 
+                  placeholder="e.g. Mathematics"
+                  value={examForm.subject}
+                  onChange={(e: any) => setExamForm({...examForm, subject: e.target.value})}
+                />
+                <Input 
+                  label="Exam Name" 
+                  placeholder="e.g. Mid Term 2024"
+                  value={examForm.examName}
+                  onChange={(e: any) => setExamForm({...examForm, examName: e.target.value})}
+                />
+                <div className="grid grid-cols-2 gap-4">
+                  <Input 
+                    label="Date" 
+                    type="date"
+                    value={examForm.date}
+                    onChange={(e: any) => setExamForm({...examForm, date: e.target.value})}
+                  />
+                  <Input 
+                    label="Total Marks" 
+                    type="number"
+                    value={examForm.totalMarks}
+                    onChange={(e: any) => setExamForm({...examForm, totalMarks: parseInt(e.target.value)})}
+                  />
+                </div>
+                <div className="pt-4 flex gap-3">
+                  <button onClick={() => setShowExamModal(false)} className="flex-1 py-4 rounded-xl font-bold text-text-secondary hover:bg-slate-100 transition-all">Cancel</button>
+                  <button onClick={handleAddExam} className="flex-1 py-4 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] transition-all">Schedule Exam</button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Marks Entry Modal */}
+      <AnimatePresence>
+        {showMarksModal && selectedExamForMarks && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowMarksModal(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-white rounded-[24px] p-8 shadow-2xl relative z-[101] w-full max-w-3xl overflow-hidden flex flex-col h-[80vh]"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h3 className="text-2xl font-black text-text-heading">Enter Marks</h3>
+                  <p className="text-sm text-text-sub">{selectedExamForMarks.name} | {selectedExamForMarks.subject} | Class {selectedExamForMarks.class}-{selectedExamForMarks.section}</p>
+                </div>
+                <button onClick={() => setShowMarksModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
+                <table className="w-full text-left">
+                  <thead className="sticky top-0 bg-white z-10">
+                    <tr className="border-b border-slate-200">
+                      <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Student Name</th>
+                      <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Marks (/{selectedExamForMarks.totalMarks})</th>
+                      <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Grade</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {students.filter((s: any) => s.class === selectedExamForMarks.class && s.section === selectedExamForMarks.section).map((s: any) => (
+                      <tr key={s.studentId} className="hover:bg-slate-50/50">
+                        <td className="py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center font-bold text-[10px]">
+                              {s.name[0]}
+                            </div>
+                            <span className="font-bold text-sm">{s.name} {s.surname}</span>
+                          </div>
+                        </td>
+                        <td className="py-4">
+                          <input 
+                            type="number" 
+                            className="w-20 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:border-primary outline-none"
+                            placeholder="0"
+                            max={selectedExamForMarks.totalMarks}
+                          />
+                        </td>
+                        <td className="py-4">
+                          <span className="px-2 py-1 bg-slate-100 rounded text-[10px] font-bold">Pending</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              
+              <div className="pt-6 flex gap-3 border-t border-slate-100 mt-6">
+                <button onClick={() => setShowMarksModal(false)} className="flex-1 py-4 rounded-xl font-bold text-text-secondary hover:bg-slate-100 transition-all">Cancel</button>
+                <button 
+                  onClick={() => {
+                    alert('Marks saved and published to parents!');
+                    setShowMarksModal(false);
+                  }} 
+                  className="flex-1 py-4 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] transition-all"
+                >
+                  Save & Publish
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Lesson Modal */}
+      <AnimatePresence>
+        {showLessonModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowLessonModal(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-white rounded-[24px] p-8 shadow-2xl relative z-[101] w-full max-w-2xl overflow-hidden"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-2xl font-black text-text-heading">Prepare Lesson Plan</h3>
+                <button onClick={() => setShowLessonModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar pr-2">
+                <div className="grid grid-cols-2 gap-4">
+                  <Select 
+                    label="Class" 
+                    options={assignedClasses.map(ac => ac.class)} 
+                    value={lessonForm.class} 
+                    onChange={(e: any) => setLessonForm({...lessonForm, class: e.target.value})} 
+                  />
+                  <Input 
+                    label="Subject" 
+                    placeholder="e.g. Mathematics"
+                    value={lessonForm.subject}
+                    onChange={(e: any) => setLessonForm({...lessonForm, subject: e.target.value})}
+                  />
+                </div>
+                <Input 
+                  label="Topic / Chapter" 
+                  placeholder="e.g. Linear Equations"
+                  value={lessonForm.topic}
+                  onChange={(e: any) => setLessonForm({...lessonForm, topic: e.target.value})}
+                />
+                <div className="space-y-1">
+                  <label className="label-text">Learning Objectives</label>
+                  <textarea 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none h-24 resize-none"
+                    placeholder="What should students learn?"
+                    value={lessonForm.objectives}
+                    onChange={(e) => setLessonForm({...lessonForm, objectives: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="label-text">Teaching Materials</label>
+                  <textarea 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none h-24 resize-none"
+                    placeholder="Books, Videos, Tools needed..."
+                    value={lessonForm.materials}
+                    onChange={(e) => setLessonForm({...lessonForm, materials: e.target.value})}
+                  />
+                </div>
+                <div className="pt-4 flex gap-3">
+                  <button onClick={() => setShowLessonModal(false)} className="flex-1 py-4 rounded-xl font-bold text-text-secondary hover:bg-slate-100 transition-all">Cancel</button>
+                  <button onClick={handleAddLesson} className="flex-1 py-4 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] transition-all">Save Plan</button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
 
 const ParentPanel = ({ students, examResults, reportCards, reportCardTemplates, homeworks, syllabuses, leaveRequests, setLeaveRequests, notifications, feeTransactions, feeMaster, currentUser }: any) => {
-  const [activeTab, setActiveTab] = useState<'progress' | 'homework' | 'syllabus' | 'leave' | 'fees' | 'notifications' | 'documents' | 'profile'>('progress');
+  const [activeTab, setActiveTab] = useState<'progress' | 'homework' | 'syllabus' | 'leave' | 'fees' | 'notifications' | 'documents' | 'profile' | 'messages'>('progress');
+  const [showHomeworkUploadModal, setShowHomeworkUploadModal] = useState(false);
+  const [selectedHomeworkForUpload, setSelectedHomeworkForUpload] = useState<any>(null);
   const [leaveForm, setLeaveForm] = useState({
     startDate: '',
     endDate: '',
@@ -5424,6 +6560,13 @@ const ParentPanel = ({ students, examResults, reportCards, reportCardTemplates, 
     type: 'Leave' as 'Leave' | 'Early Leave' | 'Parent Pickup',
     pickupTime: ''
   });
+
+  const [messageForm, setMessageForm] = useState({
+    teacherId: '',
+    content: ''
+  });
+
+  const [isPaying, setIsPaying] = useState(false);
 
   const myStudent = students.find((s: any) => s.studentId === currentUser.studentId) || students[0]; // Mocking for now
 
@@ -5457,6 +6600,20 @@ const ParentPanel = ({ students, examResults, reportCards, reportCardTemplates, 
     setLeaveRequests([...leaveRequests, newRequest]);
     setLeaveForm({ startDate: '', endDate: '', reason: '', type: 'Leave', pickupTime: '' });
     alert(`${leaveForm.type} application submitted successfully!`);
+  };
+
+  const handleSendMessage = () => {
+    if (!messageForm.content) return;
+    alert(`Message sent to ${messageForm.teacherId || 'Class Teacher'}`);
+    setMessageForm({ teacherId: '', content: '' });
+  };
+
+  const handlePayFee = () => {
+    setIsPaying(true);
+    setTimeout(() => {
+      setIsPaying(false);
+      alert('Payment successful! Receipt generated.');
+    }, 2000);
   };
 
   const getDueFees = () => {
@@ -5494,14 +6651,15 @@ const ParentPanel = ({ students, examResults, reportCards, reportCardTemplates, 
       <div className="flex flex-wrap gap-2 border-b border-slate-200">
         {[
           { id: 'progress', label: 'Progress', icon: GraduationCap, permission: 'Progress Report' },
-          { id: 'profile', label: 'Profile', icon: UserCircle, permission: 'all' },
           { id: 'homework', label: 'Homework', icon: BookOpen, permission: 'Home Work Assign' },
-          { id: 'syllabus', label: 'Syllabus', icon: ClipboardList, permission: 'Syllabus' },
           { id: 'leave', label: 'Leave', icon: CalendarRange, permission: 'Leave Application' },
           { id: 'fees', label: 'Fees', icon: Wallet, permission: 'Fee Structure' },
+          { id: 'messages', label: 'Messages', icon: MessageSquare, permission: 'all' },
+          { id: 'profile', label: 'Profile', icon: UserCircle, permission: 'all' },
+          { id: 'syllabus', label: 'Syllabus', icon: ClipboardList, permission: 'Syllabus' },
           { id: 'documents', label: 'Documents', icon: FileText, permission: 'Transfer Certificate' },
           { id: 'notifications', label: 'Notifications', icon: Bell, permission: 'all' },
-        ].filter(tab => currentUser.permissions.includes('all') || currentUser.permissions.includes(tab.permission) || tab.permission === 'all').map((tab) => (
+        ].filter(tab => (currentUser?.permissions || []).includes('all') || (currentUser?.permissions || []).includes(tab.permission) || tab.permission === 'all').map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
@@ -5516,6 +6674,78 @@ const ParentPanel = ({ students, examResults, reportCards, reportCardTemplates, 
           </button>
         ))}
       </div>
+
+      {activeTab === 'messages' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <Card className="lg:col-span-1">
+            <h3 className="text-lg font-bold mb-6">School Contacts</h3>
+            <div className="space-y-2">
+              <button 
+                onClick={() => setMessageForm({...messageForm, teacherId: 'Class Teacher'})}
+                className={`w-full p-4 rounded-xl flex items-center gap-3 transition-all ${messageForm.teacherId === 'Class Teacher' ? 'bg-primary text-white' : 'hover:bg-slate-50 border border-transparent hover:border-slate-100'}`}
+              >
+                <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center font-bold text-xs">CT</div>
+                <div className="text-left">
+                  <p className="font-bold text-sm">Class Teacher</p>
+                  <p className={`text-[10px] ${messageForm.teacherId === 'Class Teacher' ? 'text-white/70' : 'text-text-sub'}`}>Primary Contact</p>
+                </div>
+              </button>
+              <button 
+                onClick={() => setMessageForm({...messageForm, teacherId: 'Admin'})}
+                className={`w-full p-4 rounded-xl flex items-center gap-3 transition-all ${messageForm.teacherId === 'Admin' ? 'bg-primary text-white' : 'hover:bg-slate-50 border border-transparent hover:border-slate-100'}`}
+              >
+                <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center font-bold text-xs">AD</div>
+                <div className="text-left">
+                  <p className="font-bold text-sm">School Admin</p>
+                  <p className={`text-[10px] ${messageForm.teacherId === 'Admin' ? 'text-white/70' : 'text-text-sub'}`}>Office & Fees</p>
+                </div>
+              </button>
+            </div>
+          </Card>
+          <Card className="lg:col-span-2 flex flex-col h-[600px]">
+            {messageForm.teacherId ? (
+              <>
+                <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                  <h3 className="font-bold">Chat with {messageForm.teacherId}</h3>
+                  <span className="text-[10px] text-green-500 font-bold uppercase">Online</span>
+                </div>
+                <div className="flex-1 p-6 overflow-y-auto custom-scrollbar space-y-4">
+                  <div className="flex justify-start">
+                    <div className="bg-slate-100 text-text-heading p-3 rounded-2xl rounded-tl-none max-w-[80%]">
+                      <p className="text-sm">Dear Parent, {myStudent.name} has been doing great in class. Please check the recent homework.</p>
+                      <span className="text-[9px] text-text-sub mt-1 block">09:15 AM</span>
+                    </div>
+                  </div>
+                  <div className="flex justify-end">
+                    <div className="bg-primary text-white p-3 rounded-2xl rounded-tr-none max-w-[80%]">
+                      <p className="text-sm">Thank you teacher. We will check it today.</p>
+                      <span className="text-[9px] opacity-70 mt-1 block">09:45 AM</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-4 border-t border-slate-100 flex gap-2">
+                  <input 
+                    type="text" 
+                    placeholder="Type your message..." 
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm outline-none focus:border-primary"
+                    value={messageForm.content}
+                    onChange={(e) => setMessageForm({...messageForm, content: e.target.value})}
+                  />
+                  <button onClick={handleSendMessage} className="p-2 bg-primary text-white rounded-xl hover:scale-105 transition-all">
+                    <Send size={20} />
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center text-center p-12">
+                <MessageSquare size={48} className="text-slate-200 mb-4" />
+                <h4 className="font-bold text-text-heading">Select a contact to start communicating</h4>
+                <p className="text-sm text-text-sub mt-2">Direct communication with teachers is available during school hours.</p>
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
 
       {activeTab === 'profile' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -5691,9 +6921,21 @@ const ParentPanel = ({ students, examResults, reportCards, reportCardTemplates, 
                 <span className="text-[10px] font-bold text-red-500 uppercase">Due: {h.dueDate}</span>
               </div>
               <p className="text-sm text-text-sub mb-6 line-clamp-2">{h.description}</p>
-              <button className="w-full py-2 bg-slate-100 text-text-heading font-bold rounded-xl text-xs hover:bg-slate-200 transition-all">
-                View Details
-              </button>
+              <div className="flex gap-2">
+                <button className="flex-1 py-2 bg-slate-100 text-text-heading font-bold rounded-xl text-xs hover:bg-slate-200 transition-all">
+                  View Details
+                </button>
+                <button 
+                  onClick={() => {
+                    setSelectedHomeworkForUpload(h);
+                    setShowHomeworkUploadModal(true);
+                  }}
+                  className="flex-1 py-2 bg-primary text-white font-bold rounded-xl text-xs hover:scale-[1.02] transition-all flex items-center justify-center gap-2"
+                >
+                  <Upload size={14} />
+                  Upload Solution
+                </button>
+              </div>
             </Card>
           ))}
           {homeworks.filter((h: any) => h.class === myStudent.class).length === 0 && (
@@ -5857,7 +7099,15 @@ const ParentPanel = ({ students, examResults, reportCards, reportCardTemplates, 
               <h2 className="text-4xl font-black text-text-heading">₹{getDueFees().toLocaleString()}</h2>
             </div>
             <div className="w-full pt-6 border-t border-slate-100">
-              <p className="text-sm font-bold text-text-heading mb-4">Scan QR to Pay via UPI</p>
+              <button 
+                onClick={handlePayFee}
+                disabled={isPaying || getDueFees() === 0}
+                className="btn-primary w-full py-4 mb-6 flex items-center justify-center gap-2"
+              >
+                {isPaying ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <CreditCard size={20} />}
+                {isPaying ? 'Processing...' : 'Pay Now Online'}
+              </button>
+              <p className="text-sm font-bold text-text-heading mb-4">Or Scan QR to Pay via UPI</p>
               <div className="bg-white p-4 rounded-2xl border-2 border-primary/20 inline-block">
                 <QrCode size={160} className="text-primary" />
               </div>
@@ -5932,6 +7182,68 @@ const ParentPanel = ({ students, examResults, reportCards, reportCardTemplates, 
           ))}
         </div>
       )}
+
+      {/* Homework Upload Modal */}
+      <AnimatePresence>
+        {showHomeworkUploadModal && selectedHomeworkForUpload && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowHomeworkUploadModal(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-white rounded-[24px] p-8 shadow-2xl relative z-[101] w-full max-w-lg overflow-hidden"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h3 className="text-2xl font-black text-text-heading">Upload Solution</h3>
+                  <p className="text-sm text-text-sub">{selectedHomeworkForUpload.subject}: {selectedHomeworkForUpload.title}</p>
+                </div>
+                <button onClick={() => setShowHomeworkUploadModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <div className="space-y-6">
+                <div className="border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center hover:border-primary/50 transition-all cursor-pointer bg-slate-50">
+                  <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <Upload className="text-primary" size={32} />
+                  </div>
+                  <p className="font-bold text-text-heading">Click or drag to upload</p>
+                  <p className="text-xs text-text-sub mt-1">PDF, JPG, PNG (Max 5MB)</p>
+                </div>
+                
+                <div className="space-y-1">
+                  <label className="label-text">Remarks (Optional)</label>
+                  <textarea 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none h-24 resize-none"
+                    placeholder="Any comments for the teacher?"
+                  />
+                </div>
+                
+                <div className="pt-4 flex gap-3">
+                  <button onClick={() => setShowHomeworkUploadModal(false)} className="flex-1 py-4 rounded-xl font-bold text-text-secondary hover:bg-slate-100 transition-all">Cancel</button>
+                  <button 
+                    onClick={() => {
+                      alert('Homework solution uploaded successfully!');
+                      setShowHomeworkUploadModal(false);
+                    }} 
+                    className="flex-1 py-4 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] transition-all"
+                  >
+                    Submit Solution
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -6015,7 +7327,7 @@ const LiveCamera = ({ cameraUrls }: { cameraUrls: { id: string, name: string, ur
 };
 
 const DueFeesModule = ({ students, feeMaster, feeTransactions, currentUser, getStudentDueFees }: any) => {
-  const isAdmin = currentUser?.role === 'admin';
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super-admin';
   
   const dueStudents = students.map((s: any) => ({
     ...s,
@@ -6106,7 +7418,7 @@ const DueFeesModule = ({ students, feeMaster, feeTransactions, currentUser, getS
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto custom-scrollbar">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="text-[10px] font-bold text-text-secondary uppercase tracking-wider border-b border-slate-200">
@@ -6611,7 +7923,6 @@ const Class360View = ({ students, masterData, attendance, feeTransactions }: any
             <thead>
               <tr className="text-[10px] font-bold text-text-secondary uppercase tracking-wider border-b border-slate-200">
                 <th className="pb-4 px-4">Student</th>
-                <th className="pb-4 px-4">Roll No</th>
                 <th className="pb-4 px-4">Attendance</th>
                 <th className="pb-4 px-4">Performance</th>
               </tr>
@@ -6630,7 +7941,6 @@ const Class360View = ({ students, masterData, attendance, feeTransactions }: any
                       </div>
                     </div>
                   </td>
-                  <td className="py-4 px-4 font-medium">{i + 1}</td>
                   <td className="py-4 px-4">
                     <span className="px-2 py-1 bg-emerald-100 text-emerald-600 rounded text-[10px] font-bold">96%</span>
                   </td>
@@ -7234,27 +8544,27 @@ const ReportsView = ({ students, feeTransactions, attendance, homeworks, hostelA
   const filteredFinance = feeTransactions.filter((t: any) => 
     (!filters.class || t.class === filters.class) && 
     (!filters.section || t.section === filters.section) &&
-    (!filters.date || t.date === new Date(filters.date).toLocaleDateString())
+    (!filters.date || t.date === formatDate(new Date(filters.date)))
   );
 
   const filteredAttendance = attendance.filter((a: any) => 
     (!filters.class || a.class === filters.class) && 
     (!filters.section || a.section === filters.section) &&
-    (!filters.date || a.date === new Date(filters.date).toLocaleDateString())
+    (!filters.date || a.date === formatDate(filters.date))
   );
 
   const filteredHomework = homeworks.filter((h: any) => 
     (!filters.class || h.class === filters.class) && 
     (!filters.section || h.section === filters.section) &&
-    (!filters.date || h.date === new Date(filters.date).toLocaleDateString())
+    (!filters.date || h.date === formatDate(new Date(filters.date)))
   );
 
   const filteredHostel = hostelAttendance.filter((a: any) => 
-    (!filters.date || a.date === new Date(filters.date).toLocaleDateString())
+    (!filters.date || a.date === formatDate(filters.date))
   );
 
   const filteredLeave = leaveRequests.filter((l: any) => 
-    (!filters.date || l.startDate === new Date(filters.date).toLocaleDateString())
+    (!filters.date || l.startDate === formatDate(new Date(filters.date)))
   );
 
   const exportToExcel = (data: any[], fileName: string) => {
@@ -9009,31 +10319,25 @@ const FrontOfficePanel = ({ enquiries, setEnquiries, visitors, setVisitors, comp
 
 const RoleAssignPanel = ({ users, setUsers }: any) => {
   const [selectedUser, setSelectedUser] = useState<any>(null);
-  const availablePermissions = [
-    'Admission', 'QR Attendance', 'QR Late Attendance', 'QR Leaving During School',
-    'Leave Application', 'Fee Structure', 'Hostel', 'Syllabus', 'Payment Gateway',
-    'WhatsApp', 'Progress Report', 'Transfer Certificate', 'Appreciation Certificate',
-    'Birthday Wish', 'Bulk WhatsApp Notification', 'Home Work Assign', 'Bank/Cash Management',
-    'ID Card Generate Panel'
-  ];
+  const [searchTerm, setSearchTerm] = useState('');
 
   const togglePermission = async (permission: string) => {
     if (!selectedUser) return;
-    const newPermissions = selectedUser.permissions.includes(permission)
-      ? selectedUser.permissions.filter((p: string) => p !== permission)
-      : [...selectedUser.permissions, permission];
-    
+    const currentPermissions = selectedUser.permissions || [];
+    const newPermissions = currentPermissions.includes(permission)
+      ? currentPermissions.filter((p: string) => p !== permission)
+      : [...currentPermissions, permission];
+
     const updatedUser = { ...selectedUser, permissions: newPermissions };
     
     if (supabase) {
       const { error } = await supabase
         .from('users')
         .update({ permissions: newPermissions })
-        .eq('username', selectedUser.id);
+        .match(selectedUser.dbUsername ? { username: selectedUser.dbUsername } : { id: selectedUser.dbId || selectedUser.id });
       
       if (error) {
         console.error('Error updating permissions:', error);
-        alert('Failed to update permissions in database');
         return;
       }
     }
@@ -9042,54 +10346,175 @@ const RoleAssignPanel = ({ users, setUsers }: any) => {
     setUsers(users.map((u: any) => u.id === selectedUser.id ? updatedUser : u));
   };
 
+  const availablePermissions = [
+    'all',
+    'Admission',
+    'QR Attendance',
+    'QR Late Attendance',
+    'QR Leaving During School',
+    'Leave Application',
+    'Fee Structure',
+    'Collect Fee',
+    'Hostel',
+    'Syllabus',
+    'Payment Gateway',
+    'WhatsApp',
+    'Progress Report',
+    'Transfer Certificate',
+    'Appreciation Certificate',
+    'Birthday Wish',
+    'Bulk WhatsApp Notification',
+    'Home Work Assign',
+    'Bank/Cash Management',
+    'ID Card Generate Panel',
+    'Role Assign',
+    'User Logs'
+  ];
+
+  const filteredUsers = users.filter((u: any) => 
+    u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    u.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    u.role.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   return (
-    <div className="space-y-8 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-black text-text-heading tracking-tight">Role & Permission Management</h1>
-      </div>
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <Card className="lg:col-span-1 p-6">
+        <h3 className="text-xl font-black text-text-heading mb-6 uppercase tracking-tight">System Users</h3>
+        <div className="relative mb-6">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-text-sub" size={18} />
+          <input 
+            type="text" 
+            placeholder="Search users..." 
+            className="input-field pl-12" 
+            value={searchTerm} 
+            onChange={(e) => setSearchTerm(e.target.value)} 
+          />
+        </div>
+        <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2 no-scrollbar">
+          {filteredUsers.map((u: any) => (
+            <button
+              key={u.id}
+              onClick={() => setSelectedUser(u)}
+              className={`w-full text-left p-4 rounded-2xl transition-all border-2 ${
+                selectedUser?.id === u.id 
+                  ? 'border-primary bg-primary/5' 
+                  : 'border-transparent bg-slate-50 hover:bg-slate-100'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm ${
+                  selectedUser?.id === u.id ? 'bg-primary text-white' : 'bg-primary/10 text-primary'
+                }`}>
+                  {u.name[0]}
+                </div>
+                <div>
+                  <p className="font-bold text-sm text-text-heading">{u.name}</p>
+                  <p className={`text-[10px] uppercase font-black tracking-widest ${
+                    selectedUser?.id === u.id ? 'text-primary' : 'text-text-sub'
+                  }`}>{u.role} | {u.id}</p>
+                </div>
+              </div>
+            </button>
+          ))}
+          {filteredUsers.length === 0 && (
+            <div className="text-center py-8 text-text-sub font-medium">
+              No users found matching your search.
+            </div>
+          )}
+        </div>
+      </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        <Card className="md:col-span-1">
-          <h3 className="text-lg font-bold mb-4">Users</h3>
-          <div className="space-y-2">
-            {users.map((u: any) => (
-              <button
-                key={u.id}
-                onClick={() => setSelectedUser(u)}
-                className={`w-full text-left p-3 rounded-xl transition-all ${selectedUser?.id === u.id ? 'bg-primary text-white' : 'hover:bg-slate-50'}`}
-              >
-                <p className="font-bold text-sm">{u.name}</p>
-                <p className={`text-[10px] uppercase font-bold ${selectedUser?.id === u.id ? 'text-white/70' : 'text-text-sub'}`}>{u.role} | {u.id}</p>
-              </button>
-            ))}
-          </div>
-        </Card>
+      <Card className="lg:col-span-2 p-8">
+        {selectedUser ? (
+          <div className="space-y-8">
+            <div className="flex items-center gap-6 pb-6 border-b border-slate-100">
+              <div className="w-20 h-20 rounded-3xl bg-primary/10 flex items-center justify-center text-primary font-black text-3xl">
+                {selectedUser.name[0]}
+              </div>
+              <div>
+                <h3 className="text-3xl font-black text-text-heading uppercase tracking-tight">{selectedUser.name}</h3>
+                <div className="flex items-center gap-3 mt-1">
+                  <span className="px-3 py-1 bg-primary/10 text-primary rounded-full text-[10px] font-black uppercase tracking-widest">
+                    {selectedUser.role}
+                  </span>
+                  <span className="text-sm font-bold text-text-sub uppercase tracking-widest">
+                    ID: {selectedUser.id}
+                  </span>
+                </div>
+              </div>
+            </div>
 
-        <Card className="md:col-span-2">
-          {selectedUser ? (
-            <>
-              <h3 className="text-lg font-bold mb-4">Permissions for {selectedUser.name}</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-black text-text-heading uppercase tracking-widest">Access Permissions</h4>
+                <span className="text-xs font-bold text-primary bg-primary/5 px-3 py-1 rounded-full">
+                  {(selectedUser.permissions || []).length} Active
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {availablePermissions.map((p) => (
-                  <label key={p} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100 transition-all">
+                  <label 
+                    key={p} 
+                    className={`flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all border-2 ${
+                      (selectedUser.permissions || []).includes(p)
+                        ? 'border-primary bg-primary/5'
+                        : 'border-slate-100 hover:border-slate-200 bg-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-lg ${(selectedUser.permissions || []).includes(p) ? 'bg-primary text-white' : 'bg-slate-100 text-text-sub'}`}>
+                        {p === 'all' ? <ShieldCheck size={18} /> : <Lock size={18} />}
+                      </div>
+                      <span className="text-sm font-bold text-text-heading">{p}</span>
+                    </div>
                     <input
                       type="checkbox"
-                      checked={selectedUser.permissions.includes(p)}
+                      className="hidden"
+                      checked={(selectedUser.permissions || []).includes(p)}
                       onChange={() => togglePermission(p)}
-                      className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary"
                     />
-                    <span className="text-sm font-medium text-text-heading">{p}</span>
+                    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
+                      (selectedUser.permissions || []).includes(p)
+                        ? 'bg-primary border-primary text-white'
+                        : 'border-slate-200'
+                    }`}>
+                      {(selectedUser.permissions || []).includes(p) && <CheckCircle2 size={14} />}
+                    </div>
                   </label>
                 ))}
               </div>
-            </>
-          ) : (
-            <div className="h-full flex items-center justify-center text-text-sub italic">
-              Select a user to manage permissions
             </div>
-          )}
-        </Card>
-      </div>
+
+            <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
+              <div className="flex gap-4">
+                <div className="p-3 bg-white rounded-2xl shadow-sm h-fit">
+                  <AlertCircle className="text-primary" size={24} />
+                </div>
+                <div>
+                  <h5 className="font-bold text-text-heading">Security Note</h5>
+                  <p className="text-sm text-text-sub mt-1">
+                    Changes to permissions take effect immediately. The user may need to refresh their dashboard to see updated access levels.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="h-full flex flex-col items-center justify-center text-center space-y-6 py-20">
+            <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center text-text-sub">
+              <UserCog size={48} />
+            </div>
+            <div>
+              <h3 className="text-2xl font-black text-text-heading uppercase tracking-tight">Select a User</h3>
+              <p className="text-text-sub font-medium max-w-md mx-auto">
+                Choose a system user from the left panel to manage their access permissions and system roles.
+              </p>
+            </div>
+          </div>
+        )}
+      </Card>
     </div>
   );
 };
@@ -9444,7 +10869,9 @@ const SuperAdminPanel = ({ users, setUsers }: any) => {
                       </div>
                       <div>
                         <p className="font-black text-text-heading text-base">{user.name}</p>
-                        <p className="text-xs font-bold text-primary uppercase tracking-widest">{user.id}</p>
+                        <p className="text-xs font-bold text-primary uppercase tracking-widest">
+                          {['admin', 'teacher', 'parent'].includes(user.role) ? '********' : user.id}
+                        </p>
                       </div>
                     </div>
                   </td>
@@ -9472,7 +10899,7 @@ const SuperAdminPanel = ({ users, setUsers }: any) => {
                     ) : (
                       <div className="flex items-center gap-2 font-mono font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-lg w-fit">
                         <Lock size={12} className="text-slate-400" />
-                        {user.password || '12345678'}
+                        {['admin', 'teacher', 'parent'].includes(user.role) ? '********' : (user.password || '12345678')}
                       </div>
                     )}
                   </td>
@@ -9522,14 +10949,31 @@ export default function App() {
       try {
         // Fetch Users
         const { data: usersData } = await supabase.from('users').select('*');
-        if (usersData) {
-          const formattedUsers = usersData.map(u => ({
-            ...u,
-            id: u.username,
-            name: u.username.charAt(0).toUpperCase() + u.username.slice(1),
-            permissions: u.permissions || []
-          }));
-          setUsers(formattedUsers);
+        if (usersData && usersData.length > 0) {
+          const formattedUsers = usersData.map(u => {
+            const username = u.username || u.id || 'unknown';
+            return {
+              ...u,
+              id: username,
+              dbId: u.id,
+              dbUsername: u.username,
+              name: u.name || (username.charAt(0).toUpperCase() + username.slice(1)),
+              permissions: u.permissions || []
+            };
+          });
+          
+          setUsers(prev => {
+            const merged = [...prev];
+            formattedUsers.forEach(dbUser => {
+              const index = merged.findIndex(u => u.id === dbUser.id);
+              if (index > -1) {
+                merged[index] = { ...merged[index], ...dbUser };
+              } else {
+                merged.push(dbUser);
+              }
+            });
+            return merged;
+          });
         }
 
         // Fetch Students
@@ -9540,6 +10984,7 @@ export default function App() {
           const formattedStudents = studentsData.map(s => ({
             ...s,
             studentId: s.student_id,
+            rollNumber: s.roll_number,
             fatherName: s.father_name,
             motherName: s.mother_name,
             fatherMobile: s.father_mobile,
@@ -9552,6 +10997,7 @@ export default function App() {
             aadhaarNumber: s.aadhaar_number,
             panNumber: s.pan_number,
             passportNumber: s.passport_number,
+            studentType: s.student_type || 'Old',
             fatherIncome: s.father_income,
             fatherIncomeSource: s.father_income_source,
             motherIncome: s.mother_income,
@@ -9786,7 +11232,6 @@ export default function App() {
             ...fc,
             studentId: fc.student_id,
             studentName: fc.student_name,
-            rollNo: fc.roll_no,
             feeType: fc.fee_type,
             paymentMode: fc.payment_mode,
             transactionId: fc.transaction_id,
@@ -9868,7 +11313,10 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   const getStudentDueFees = (student: any) => {
-    const classFees = feeMaster.filter((f: any) => f.class === student.class);
+    const classFees = feeMaster.filter((f: any) => 
+      f.class === student.class && 
+      (f.studentType === 'Both' || !f.studentType || f.studentType === student.studentType)
+    );
     if (classFees.length === 0) return 0;
     
     const paidAmount = feeTransactions
@@ -9891,10 +11339,10 @@ export default function App() {
   const [studentSearchQuery, setStudentSearchQuery] = useState<string>('');
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
   const [schoolProfile, setSchoolProfile] = useState({
-    name: 'Digital School Systems',
+    name: 'SUBRAI MISSION CONVENT SCHOOL',
     tagline: 'Excellence in Education',
-    logo: 'https://ais-pre-b3e775v3rvj7egmf2trpz3-352124703760.asia-southeast1.run.app/input_file_0.png',
-    email: 'info@digitalschool.com',
+    logo: 'https://storage.googleapis.com/cortex-dev-cortex-build-public-assets/ais-dev-pemdu4z6w4zlnzrsqbkpe4-140017560605/tiwarynidhi32%40gmail.com/1744190202872-image.png',
+    email: 'info@subraimission.com',
     principalSignature: null,
     classTeacherSignature: null,
     schoolStamp: null,
@@ -9912,25 +11360,6 @@ export default function App() {
     ]
   });
 
-  // Effect to handle role-based branding
-  useEffect(() => {
-    if (currentUser?.role === 'parent') {
-      setSchoolProfile(prev => ({
-        ...prev,
-        name: 'SUBRAI MISSION CONVENT SCHOOL',
-        logo: 'https://ais-pre-b3e775v3rvj7egmf2trpz3-352124703760.asia-southeast1.run.app/input_file_1.png',
-        tagline: 'TELIAMURA, KHOWAI, TRIPURA'
-      }));
-    } else {
-      // For Admin, Staff, Teacher, or Guest
-      setSchoolProfile(prev => ({
-        ...prev,
-        name: 'Digital School Systems',
-        logo: 'https://ais-pre-b3e775v3rvj7egmf2trpz3-352124703760.asia-southeast1.run.app/input_file_0.png',
-        tagline: 'Excellence in Education'
-      }));
-    }
-  }, [currentUser?.role]);
   const [formData, setFormData] = useState<any>({});
   const [selectedPersonForID, setSelectedPersonForID] = useState<any>(null);
   const [idCardTab, setIdCardTab] = useState('student');
@@ -9959,7 +11388,8 @@ export default function App() {
     subjects: ['Mathematics', 'Science', 'English', 'Social Studies', 'Hindi', 'Computer Science'],
     genders: ['Male', 'Female', 'Others'],
     teachers: ['Rajesh Kumar', 'Sunita Devi', 'Amit Shah', 'Priyanka Sharma', 'Vikram Singh', 'Neha Gupta', 'Sanjay Verma', 'Meera Nair', 'Rahul Sharma', 'Sachin Gupta'],
-    sessions: ['2023-24', '2024-25', '2025-26']
+    sessions: ['2023-24', '2024-25', '2025-26'],
+    studentTypes: ['New', 'Old']
   });
 
   const [taxes, setTaxes] = useState(0);
@@ -9970,12 +11400,19 @@ export default function App() {
     { id: '1', name: 'Tuition Fee', description: 'Monthly tuition fee' },
     { id: '2', name: 'Library Fee', description: 'Annual library fee' },
     { id: '3', name: 'Transport Fee', description: 'Monthly transport fee' },
-    { id: '4', name: 'Early Leave Fee', description: 'Fee for early student leave' },
-    { id: '5', name: 'Parent Pickup Fee', description: 'Fee for parent pickup service' }
+    { id: '4', name: 'Admission Fee', description: 'One-time admission fee for new students' },
+    { id: '5', name: 'Re-admission Fee', description: 'Annual re-admission fee for existing students' },
+    { id: '6', name: 'Hostel Fee', description: 'Monthly hostel fee' },
+    { id: '7', name: 'Early Leave Fee', description: 'Fee for early student leave' },
+    { id: '8', name: 'Parent Pickup Fee', description: 'Fee for parent pickup service' }
   ]);
   const [feeMaster, setFeeMaster] = useState<FeeMaster[]>([
-    { id: '1', class: 'Class 1', feeType: 'Tuition Fee', amount: 2500, frequency: 'Monthly' },
-    { id: '2', class: 'Class 2', feeType: 'Tuition Fee', amount: 2600, frequency: 'Monthly' }
+    { id: '1', class: 'Class 1', feeType: 'Tuition Fee', amount: 2500, frequency: 'Monthly', studentType: 'Both' },
+    { id: '2', class: 'Class 2', feeType: 'Tuition Fee', amount: 2600, frequency: 'Monthly', studentType: 'Both' },
+    { id: '3', class: 'Class 1', feeType: 'Admission Fee', amount: 5000, frequency: 'Yearly', studentType: 'New' },
+    { id: '4', class: 'Class 1', feeType: 'Re-admission Fee', amount: 1500, frequency: 'Yearly', studentType: 'Old' },
+    { id: '5', class: 'Class 2', feeType: 'Admission Fee', amount: 5500, frequency: 'Yearly', studentType: 'New' },
+    { id: '6', class: 'Class 2', feeType: 'Re-admission Fee', amount: 1600, frequency: 'Yearly', studentType: 'Old' }
   ]);
   const [feeTransactions, setFeeTransactions] = useState<FeeTransaction[]>([]);
   const [bankBalance, setBankBalance] = useState(500000);
@@ -10211,27 +11648,27 @@ export default function App() {
         { 
           id: '1', studentId: 'DS-100001', name: 'Aarav', surname: 'Sharma', class: 'Class 1', section: 'A', gender: 'Male', residentialAddress: 'New Delhi', category: 'General', religion: 'Hinduism', caste: 'Brahmin',
           fatherName: 'Rajesh Sharma', motherName: 'Sunita Sharma', fatherMobile: '9876543210', motherMobile: '9876543211', bloodGroup: 'A+', emergencyContact: '9876543212', localGuardianContact: '9876543213', email: 'aarav@example.com', allergy: 'None', hasDisability: false, disabilityDetails: '', relationsInSchool: [],
-          photo: 'https://picsum.photos/seed/aarav/200'
+          photo: 'https://picsum.photos/seed/aarav/200', studentType: 'Old'
         },
         { 
           id: '2', studentId: 'DS-100002', name: 'Vihaan', surname: 'Gupta', class: 'Class 2', section: 'B', gender: 'Male', residentialAddress: 'Mumbai', category: 'General', religion: 'Hinduism', caste: 'Vaishya',
           fatherName: 'Amit Gupta', motherName: 'Neha Gupta', fatherMobile: '9876543214', motherMobile: '9876543215', bloodGroup: 'B+', emergencyContact: '9876543216', localGuardianContact: '9876543217', email: 'vihaan@example.com', allergy: 'None', hasDisability: false, disabilityDetails: '', relationsInSchool: [],
-          photo: 'https://picsum.photos/seed/vihaan/200'
+          photo: 'https://picsum.photos/seed/vihaan/200', studentType: 'Old'
         },
         { 
           id: '3', studentId: 'DS-100003', name: 'Advik', surname: 'Verma', class: 'Class 3', section: 'C', gender: 'Male', residentialAddress: 'Bangalore', category: 'OBC', religion: 'Hinduism', caste: 'Kshatriya',
           fatherName: 'Sanjay Verma', motherName: 'Meera Verma', fatherMobile: '9876543218', motherMobile: '9876543219', bloodGroup: 'O+', emergencyContact: '9876543220', localGuardianContact: '9876543221', email: 'advik@example.com', allergy: 'None', hasDisability: false, disabilityDetails: '', relationsInSchool: [],
-          photo: 'https://picsum.photos/seed/advik/200'
+          photo: 'https://picsum.photos/seed/advik/200', studentType: 'Old'
         },
         { 
           id: '4', studentId: 'DS-100004', name: 'Ananya', surname: 'Iyer', class: 'Class 4', section: 'D', gender: 'Female', residentialAddress: 'Chennai', category: 'General', religion: 'Hinduism', caste: 'Brahmin',
           fatherName: 'Subramanian Iyer', motherName: 'Lakshmi Iyer', fatherMobile: '9876543222', motherMobile: '9876543223', bloodGroup: 'AB+', emergencyContact: '9876543224', localGuardianContact: '9876543225', email: 'ananya@example.com', allergy: 'None', hasDisability: false, disabilityDetails: '', relationsInSchool: [],
-          photo: 'https://picsum.photos/seed/ananya/200'
+          photo: 'https://picsum.photos/seed/ananya/200', studentType: 'Old'
         },
         { 
           id: '5', studentId: 'DS-100005', name: 'Ishani', surname: 'Reddy', class: 'Class 5', section: 'A', gender: 'Female', residentialAddress: 'Hyderabad', category: 'General', religion: 'Hinduism', caste: 'Reddy',
           fatherName: 'Venkat Reddy', motherName: 'Kavitha Reddy', fatherMobile: '9876543226', motherMobile: '9876543227', bloodGroup: 'A-', emergencyContact: '9876543228', localGuardianContact: '9876543229', email: 'ishani@example.com', allergy: 'None', hasDisability: false, disabilityDetails: '', relationsInSchool: [],
-          photo: 'https://picsum.photos/seed/ishani/200'
+          photo: 'https://picsum.photos/seed/ishani/200', studentType: 'Old'
         },
       ];
       setStudents(indianStudents);
@@ -10584,9 +12021,11 @@ export default function App() {
         emergency_contact: formData.emergencyContact,
         local_guardian_contact: formData.localGuardianContact,
         email: formData.email,
+        student_type: formData.studentType || 'Old',
         allergy: formData.allergy,
         has_disability: formData.hasDisability,
         disability_details: formData.disabilityDetails,
+        roll_number: formData.rollNumber,
         photo: formData.photo,
         title: formData.title,
         aadhaar_number: formData.aadhaarNumber,
@@ -10614,6 +12053,8 @@ export default function App() {
           ...payload,
           id: editingStudentId,
           studentId: payload.student_id,
+          rollNumber: payload.roll_number,
+          studentType: payload.student_type,
           fatherName: payload.father_name,
           motherName: payload.mother_name,
           fatherMobile: payload.father_mobile,
@@ -10656,6 +12097,8 @@ export default function App() {
           const newStudent = {
             ...inserted[0],
             studentId: inserted[0].student_id,
+            rollNumber: inserted[0].roll_number,
+            studentType: inserted[0].student_type,
             fatherName: inserted[0].father_name,
             motherName: inserted[0].mother_name,
             fatherMobile: inserted[0].father_mobile,
@@ -10697,7 +12140,7 @@ export default function App() {
   if (view === 'login') {
     return (
       <div 
-        className="min-h-screen flex flex-col items-center justify-center p-4 md:p-6 bg-slate-900 relative font-display overflow-hidden"
+        className="min-h-screen flex flex-col items-center justify-center p-4 md:p-6 bg-slate-900 relative font-display overflow-y-auto custom-scrollbar"
       >
         {/* Professional Academic Background (Library/Books) - No trees/grass */}
         <div 
@@ -10713,35 +12156,20 @@ export default function App() {
           animate={{ opacity: 1, y: 0 }}
           className="w-full max-w-lg relative z-10"
         >
-          {/* Stylized Logo Area - Built with icons to avoid "tree" images */}
-          <div className="text-center mb-[-45px] relative z-20">
-            <div className="relative inline-flex flex-col items-center justify-center bg-white p-6 rounded-[32px] shadow-2xl border-4 border-slate-100">
-              <div className="flex items-center justify-center gap-3 mb-2">
-                <div className="p-3 bg-blue-600 rounded-2xl text-white shadow-lg">
-                  <School size={32} />
-                </div>
-                <div className="p-3 bg-orange-500 rounded-2xl text-white shadow-lg">
-                  <BookOpen size={32} />
-                </div>
-                <div className="p-3 bg-green-600 rounded-2xl text-white shadow-lg">
-                  <Laptop size={32} />
-                </div>
-              </div>
-              <div className="text-center">
-              <h1 className="text-3xl font-black tracking-tighter text-blue-900 leading-none uppercase">
-                {schoolProfile.name.split(' ').slice(0, -1).join(' ')}
-              </h1>
-              <div className="mt-1 px-4 py-0.5 bg-orange-500 rounded-full">
-                <p className="text-[10px] font-black text-white uppercase tracking-[0.3em]">
-                  {schoolProfile.name.split(' ').slice(-1)}
-                </p>
-              </div>
-              </div>
+          {/* Logo Area */}
+          <div className="flex justify-center mb-8">
+            <div className="bg-white p-6 rounded-[32px] shadow-2xl border-4 border-slate-50">
+              <img 
+                src={schoolProfile.logo} 
+                alt="JOSHODA Logo" 
+                className="h-24 md:h-32 w-auto object-contain"
+                referrerPolicy="no-referrer"
+              />
             </div>
           </div>
 
-          <div className="bg-white/90 rounded-[32px] overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.3)] border border-white/50">
-            <div className="pt-20 pb-4 text-center">
+          <div className="bg-white/95 rounded-[32px] overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.3)] border border-white/50">
+            <div className="py-8 text-center">
               <h2 className="text-2xl font-bold text-slate-800 tracking-tight">{schoolProfile.name} Login</h2>
             </div>
 
@@ -10848,9 +12276,15 @@ export default function App() {
               )}
             </div>
 
-            <div className="bg-slate-50 py-6 text-center border-t border-slate-100">
-              <p className="text-sm text-slate-500 font-bold">
-                Powered by <span className="text-blue-900 font-black">JOSHODA</span> • North-East India
+            <div className="bg-slate-50 py-8 text-center border-t border-slate-100 flex flex-col items-center gap-4">
+              <img 
+                src={schoolProfile.logo} 
+                alt="JOSHODA Logo" 
+                className="h-20 object-contain"
+                referrerPolicy="no-referrer"
+              />
+              <p className="text-sm text-slate-500 font-bold uppercase tracking-widest px-4">
+                a Product of <span className="text-blue-900 font-black">digital access</span> powered by <span className="text-blue-900 font-black">JOSHODA</span>
               </p>
             </div>
           </div>
@@ -10860,7 +12294,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex overflow-hidden">
+    <div className="h-screen bg-slate-50 flex overflow-hidden">
       {/* Sidebar Overlay for Mobile */}
       {isSidebarOpen && (
         <div 
@@ -10902,7 +12336,7 @@ export default function App() {
           </button>
         </div>
 
-        <nav ref={sidebarNavRef} className="flex-1 px-4 space-y-2 overflow-y-auto custom-scrollbar scrollbar-left pb-10 relative">
+        <nav ref={sidebarNavRef} className="flex-1 px-4 space-y-2 overflow-y-scroll custom-scrollbar pb-10 relative min-h-0">
           <SidebarItem 
             icon={LayoutDashboard} 
             label={isSidebarOpen ? "Dashboard" : ""} 
@@ -10980,7 +12414,7 @@ export default function App() {
                 onClick={() => setView('human-resource')} 
                 isSidebarOpen={isSidebarOpen}
               />
-              {(currentUser?.role === 'admin' || currentUser?.role === 'teacher') && (
+              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher') && (
                 <SidebarItem 
                   icon={QrCode} 
                   label={isSidebarOpen ? "Staff Attendance" : ""} 
@@ -11079,7 +12513,7 @@ export default function App() {
             onClick={() => setView('reports')} 
             isSidebarOpen={isSidebarOpen}
           />
-          {currentUser?.role === 'admin' && (
+          {currentUser?.role === 'admin' || currentUser?.role === 'super-admin' ? (
             <>
               <SidebarItem 
                 icon={UserCog} 
@@ -11095,15 +12529,8 @@ export default function App() {
                 onClick={() => setView('user-logs')} 
                 isSidebarOpen={isSidebarOpen}
               />
-              <SidebarItem 
-                icon={FileEdit} 
-                label={isSidebarOpen ? "SQL Editor" : ""} 
-                active={view === 'sql-editor'} 
-                onClick={() => setView('sql-editor')} 
-                isSidebarOpen={isSidebarOpen}
-              />
             </>
-          )}
+          ) : null}
           {currentUser?.role === 'student' && (
             <SidebarItem 
               icon={Wallet} 
@@ -11168,7 +12595,7 @@ export default function App() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden w-full pb-20 lg:pb-0">
+      <main className="flex-1 flex flex-col min-h-0 w-full pb-20 lg:pb-0">
         {/* Header */}
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-8 shrink-0">
           <div className="flex items-center gap-2 md:gap-4">
@@ -11214,7 +12641,7 @@ export default function App() {
             >
               <div className="text-right hidden md:block">
                 <p className="text-sm font-semibold">{currentUser?.name || 'Admin User'}</p>
-                <p className="text-[10px] text-text-secondary uppercase">{currentUser?.role === 'admin' ? 'Super Admin' : currentUser?.role}</p>
+                <p className="text-[10px] text-text-secondary uppercase">{currentUser?.role === 'super-admin' ? 'Super Admin' : currentUser?.role}</p>
               </div>
               <img 
                 src={currentUser?.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.id || 'admin'}`} 
@@ -11255,7 +12682,7 @@ export default function App() {
         </header>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
+        <div className="flex-1 overflow-y-scroll p-4 md:p-8 custom-scrollbar min-h-0">
           <AnimatePresence mode="wait">
             {view === 'profile-settings' && (
               <motion.div key="profile-settings" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
@@ -11400,357 +12827,20 @@ export default function App() {
               <SqlEditor />
             )}
             {view === 'dashboard' && (
-              <motion.div
-                key="dashboard"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="space-y-8"
-              >
-                {/* Stats Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-                  <Card className="p-6 bg-gradient-to-br from-primary to-primary/80 text-white border-none shadow-xl shadow-primary/20">
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="p-3 bg-white/20 rounded-xl">
-                        <Users size={24} />
-                      </div>
-                      <span className="text-[10px] font-black bg-white/20 px-2 py-1 rounded-full uppercase tracking-widest">Today</span>
-                    </div>
-                    <p className="text-white/70 text-xs font-bold uppercase tracking-widest mb-1">Students Present</p>
-                    <div className="flex items-end gap-2">
-                      <h3 className="text-3xl font-black">
-                        {attendance.filter(a => a.date === new Date().toISOString().split('T')[0] && a.status === 'Present').length}
-                      </h3>
-                      <span className="text-sm font-bold mb-1 opacity-60">/ {students.length}</span>
-                    </div>
-                    <div className="mt-4 h-1.5 bg-white/20 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-white rounded-full" 
-                        style={{ 
-                          width: `${students.length > 0 ? (attendance.filter(a => a.date === new Date().toISOString().split('T')[0] && a.status === 'Present').length / students.length) * 100 : 0}%` 
-                        }}
-                      ></div>
-                    </div>
-                    <p className="text-[10px] mt-2 font-black uppercase tracking-widest opacity-80">
-                      {students.length > 0 ? Math.round((attendance.filter(a => a.date === new Date().toISOString().split('T')[0] && a.status === 'Present').length / students.length) * 100) : 0}% Attendance Rate
-                    </p>
-                  </Card>
-
-                  <Card className="p-6 bg-white border-slate-100 shadow-sm">
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
-                        <UserCheck size={24} />
-                      </div>
-                      <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-full uppercase tracking-widest">Today</span>
-                    </div>
-                    <p className="text-text-secondary text-xs font-bold uppercase tracking-widest mb-1">Teachers Present</p>
-                    <div className="flex items-end gap-2">
-                      <h3 className="text-3xl font-black text-text-heading">
-                        {masterData.teachers.length > 0 ? Math.floor(masterData.teachers.length * 0.95) : 0}
-                      </h3>
-                      <span className="text-sm font-bold text-text-sub mb-1">/ {masterData.teachers.length}</span>
-                    </div>
-                    <div className="mt-4 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-blue-500 rounded-full" style={{ width: '95%' }}></div>
-                    </div>
-                    <p className="text-[10px] mt-2 font-black text-blue-600 uppercase tracking-widest">95% Attendance Rate</p>
-                  </Card>
-
-                  <Card className="p-6 bg-white border-slate-100 shadow-sm">
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
-                        <Building2 size={24} />
-                      </div>
-                      <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full uppercase tracking-widest">Live</span>
-                    </div>
-                    <p className="text-text-secondary text-xs font-bold uppercase tracking-widest mb-1">Bank Balance</p>
-                    <h3 className="text-3xl font-black text-text-heading">₹{bankBalance.toLocaleString()}</h3>
-                    <div className="mt-4 flex items-center gap-2 text-[10px] font-black text-emerald-600 uppercase tracking-widest">
-                      <ArrowUpRight size={14} />
-                      <span>Updated Just Now</span>
-                    </div>
-                  </Card>
-
-                  <Card className="p-6 bg-white border-slate-100 shadow-sm">
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="p-3 bg-orange-50 text-orange-600 rounded-xl">
-                        <Wallet size={24} />
-                      </div>
-                      <span className="text-[10px] font-black text-orange-600 bg-orange-50 px-2 py-1 rounded-full uppercase tracking-widest">Live</span>
-                    </div>
-                    <p className="text-text-secondary text-xs font-bold uppercase tracking-widest mb-1">Cash in Hand</p>
-                    <h3 className="text-3xl font-black text-text-heading">₹{cashBalance.toLocaleString()}</h3>
-                    <div className="mt-4 flex items-center gap-2 text-[10px] font-black text-orange-600 uppercase tracking-widest">
-                      <ArrowUpRight size={14} />
-                      <span>Updated Just Now</span>
-                    </div>
-                  </Card>
-
-                  <Card className="p-6 bg-white border-slate-100 shadow-sm">
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="p-3 bg-green-50 text-green-600 rounded-xl">
-                        <Coins size={24} />
-                      </div>
-                    </div>
-                    <p className="text-text-secondary text-xs font-bold uppercase tracking-widest mb-1">Fees Collected</p>
-                    <h3 className="text-3xl font-black text-text-heading">₹{feeTransactions.reduce((sum, t) => sum + t.totalPaid, 0).toLocaleString()}</h3>
-                    <p className="text-[10px] mt-4 font-black text-green-600 uppercase tracking-widest">Total Revenue</p>
-                  </Card>
-                </div>
-
-                {/* Super Admin Quick Actions */}
-                {currentUser?.role === 'super-admin' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <Card 
-                      className="p-8 bg-linear-to-br from-slate-900 to-slate-800 text-white border-none shadow-2xl cursor-pointer hover:scale-[1.02] transition-all group"
-                      onClick={() => setView('super-admin-panel')}
-                    >
-                      <div className="flex items-center gap-6">
-                        <div className="p-5 bg-white/10 rounded-[2rem] group-hover:bg-primary transition-colors">
-                          <ShieldCheck size={40} />
-                        </div>
-                        <div>
-                          <h3 className="text-2xl font-black uppercase tracking-tighter">User Master List</h3>
-                          <p className="text-white/60 font-bold text-sm">View and manage all User IDs and Passwords</p>
-                        </div>
-                      </div>
-                    </Card>
-                    <Card 
-                      className="p-8 bg-linear-to-br from-blue-900 to-blue-800 text-white border-none shadow-2xl cursor-pointer hover:scale-[1.02] transition-all group"
-                      onClick={() => setView('sql-editor')}
-                    >
-                      <div className="flex items-center gap-6">
-                        <div className="p-5 bg-white/10 rounded-[2rem] group-hover:bg-blue-500 transition-colors">
-                          <Database size={40} />
-                        </div>
-                        <div>
-                          <h3 className="text-2xl font-black uppercase tracking-tighter">SQL Editor</h3>
-                          <p className="text-white/60 font-bold text-sm">Direct database management and queries</p>
-                        </div>
-                      </div>
-                    </Card>
-                  </div>
-                )}
-
-                {/* Quick Access & Notice Board */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  <div className="lg:col-span-2 space-y-8">
-                    {/* Quick Access */}
-                    <Card className="p-6">
-                      <h3 className="text-lg font-black text-text-heading mb-6 flex items-center gap-2 uppercase tracking-tighter">
-                        <Sparkles size={20} className="text-primary" />
-                        Quick Access
-                      </h3>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                        <button onClick={() => setView('income-expense')} className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-slate-50 hover:bg-primary hover:text-white transition-all group">
-                          <div className="p-3 bg-white rounded-xl shadow-sm group-hover:bg-white/20">
-                            <Plus size={24} className="text-primary group-hover:text-white" />
-                          </div>
-                          <span className="text-[10px] font-black uppercase tracking-widest">Add Expense</span>
-                        </button>
-                        <button onClick={() => setView('human-resource')} className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-slate-50 hover:bg-primary hover:text-white transition-all group">
-                          <div className="p-3 bg-white rounded-xl shadow-sm group-hover:bg-white/20">
-                            <CheckCircle2 size={24} className="text-primary group-hover:text-white" />
-                          </div>
-                          <span className="text-[10px] font-black uppercase tracking-widest">Leave Approval</span>
-                        </button>
-                        <button onClick={() => setView('hostel')} className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-slate-50 hover:bg-primary hover:text-white transition-all group">
-                          <div className="p-3 bg-white rounded-xl shadow-sm group-hover:bg-white/20">
-                            <UserCheck2 size={24} className="text-primary group-hover:text-white" />
-                          </div>
-                          <span className="text-[10px] font-black uppercase tracking-widest">Hostel Attend.</span>
-                        </button>
-                        <button onClick={() => setView('register-student')} className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-slate-50 hover:bg-primary hover:text-white transition-all group">
-                          <div className="p-3 bg-white rounded-xl shadow-sm group-hover:bg-white/20">
-                            <UserPlus size={24} className="text-primary group-hover:text-white" />
-                          </div>
-                          <span className="text-[10px] font-black uppercase tracking-widest">New Admission</span>
-                        </button>
-                      </div>
-                    </Card>
-
-                    {/* Recent Bank / Cash Ledger */}
-                    <Card className="p-6">
-                      <h3 className="text-lg font-black text-text-heading mb-6 flex items-center gap-2 uppercase tracking-tighter">
-                        <ClipboardList size={20} className="text-primary" />
-                        Recent Bank / Cash Ledger
-                      </h3>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                          <thead>
-                            <tr className="border-b border-slate-200">
-                              <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Date</th>
-                              <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Note</th>
-                              <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider text-right">Withdrawal</th>
-                              <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider text-right">Deposit</th>
-                              <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider text-right">Balance</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {contraEntries.slice(0, 5).map((e: any) => (
-                              <tr key={e.id} className="hover:bg-slate-50/50 transition-colors">
-                                <td className="py-4 text-sm">{e.date}</td>
-                                <td className="py-4 text-sm font-medium">
-                                  {e.reference}
-                                  <p className="text-[10px] text-text-sub uppercase">{e.type}</p>
-                                </td>
-                                <td className="py-4 text-sm font-black text-rose-600 text-right">
-                                  {e.type === 'Bank to Cash' || (e.type.includes('Adjustment') && e.amount < 0) ? `₹${Math.abs(e.amount).toLocaleString()}` : '-'}
-                                </td>
-                                <td className="py-4 text-sm font-black text-green-600 text-right">
-                                  {e.type === 'Cash to Bank' || (e.type.includes('Adjustment') && e.amount > 0) ? `₹${Math.abs(e.amount).toLocaleString()}` : '-'}
-                                </td>
-                                <td className="py-4 text-sm font-black text-right text-primary">
-                                  ₹{(bankBalance + cashBalance).toLocaleString()}
-                                </td>
-                              </tr>
-                            ))}
-                            {contraEntries.length === 0 && (
-                              <tr>
-                                <td colSpan={5} className="py-8 text-center text-text-sub italic">No recent transactions</td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-                    </Card>
-
-                    {/* Recent Activities & Performance */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                      <Card className="p-6">
-                        <h3 className="text-lg font-black text-text-heading mb-6 flex items-center gap-2 uppercase tracking-tighter">
-                          <History size={20} className="text-primary" />
-                          Recent Activities
-                        </h3>
-                        <div className="space-y-4">
-                          {[
-                            { title: 'Fee Collected', desc: 'Rahul Das paid Tuition Fee', time: '10 mins ago', icon: Coins, color: 'text-green-600', bg: 'bg-green-50' },
-                            { title: 'New Admission', desc: 'Priya Sharma joined Class VI-A', time: '1 hr ago', icon: UserPlus, color: 'text-blue-600', bg: 'bg-blue-50' },
-                            { title: 'Exam Scheduled', desc: 'Unit Test II for Class X', time: '3 hrs ago', icon: ClipboardList, color: 'text-purple-600', bg: 'bg-purple-50' },
-                            { title: 'Staff Attendance', desc: 'All teachers marked present', time: '4 hrs ago', icon: UserCheck, color: 'text-amber-600', bg: 'bg-amber-50' }
-                          ].map((item, i) => (
-                            <div key={i} className="flex gap-4 p-3 rounded-xl hover:bg-slate-50 transition-all group">
-                              <div className={`p-2 rounded-lg ${item.bg} ${item.color} group-hover:scale-110 transition-transform`}>
-                                <item.icon size={18} />
-                              </div>
-                              <div className="flex-1">
-                                <p className="text-xs font-black text-text-heading uppercase tracking-tighter">{item.title}</p>
-                                <p className="text-[10px] text-text-sub font-medium mt-0.5">{item.desc}</p>
-                                <p className="text-[9px] text-text-sub/60 font-black uppercase tracking-widest mt-1">{item.time}</p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </Card>
-
-                      <Card className="p-6">
-                        <h3 className="text-lg font-black text-text-heading mb-6 flex items-center gap-2 uppercase tracking-tighter">
-                          <BarChart3 size={20} className="text-primary" />
-                          Class Performance
-                        </h3>
-                        <div className="space-y-4">
-                          {[
-                            { class: 'Class X-A', perf: 92, color: 'bg-green-500' },
-                            { class: 'Class IX-B', perf: 85, color: 'bg-blue-500' },
-                            { class: 'Class VIII-C', perf: 78, color: 'bg-orange-500' },
-                            { class: 'Class VII-A', perf: 64, color: 'bg-red-500' },
-                          ].map((item, i) => (
-                            <div key={i} className="space-y-2">
-                              <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
-                                <span className="text-text-secondary">{item.class}</span>
-                                <span className="text-text-heading">{item.perf}%</span>
-                              </div>
-                              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                                <div className={`h-full ${item.color} rounded-full`} style={{ width: `${item.perf}%` }}></div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </Card>
-                    </div>
-                  </div>
-
-                  <div className="space-y-8">
-                    {/* Notice Board */}
-                    <Card className="p-6 bg-slate-900 text-white border-none shadow-2xl">
-                      <h3 className="text-lg font-black mb-6 flex items-center gap-2 uppercase tracking-tighter">
-                        <Bell size={20} className="text-primary" />
-                        Notice Board
-                      </h3>
-                      <div className="space-y-4">
-                        {[
-                          { title: 'Summer Vacation', date: 'April 15, 2026', type: 'Holiday' },
-                          { title: 'Annual Sports Day', date: 'April 20, 2026', type: 'Event' },
-                          { title: 'Parent Teacher Meeting', date: 'May 05, 2026', type: 'PTM' },
-                        ].map((notice, i) => (
-                          <div key={i} className="p-4 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all">
-                            <p className="text-[10px] font-black text-primary uppercase tracking-widest mb-1">{notice.type}</p>
-                            <p className="text-sm font-bold mb-2">{notice.title}</p>
-                            <div className="flex items-center gap-2 text-[10px] text-white/50 font-bold uppercase tracking-widest">
-                              <Calendar size={12} />
-                              <span>{notice.date}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <button className="w-full mt-6 py-3 rounded-xl bg-white/10 hover:bg-white/20 text-[10px] font-black uppercase tracking-widest transition-all">
-                        View All Notices
-                      </button>
-                    </Card>
-
-                    {/* Birthdays */}
-                    <Card className="p-6">
-                      <h3 className="text-lg font-black text-text-heading mb-6 flex items-center gap-2 uppercase tracking-tighter">
-                        <Sparkles size={20} className="text-primary" />
-                        Today's Birthdays
-                      </h3>
-                      <div className="space-y-4">
-                        {[
-                          { name: 'Aman Gupta', role: 'Student', class: 'X-A', img: 'https://i.pravatar.cc/150?u=aman' },
-                          { name: 'Mrs. Sunita', role: 'Teacher', class: 'Maths', img: 'https://i.pravatar.cc/150?u=sunita' },
-                        ].map((bday, i) => (
-                          <div key={i} className="flex items-center gap-4">
-                            <img src={bday.img} alt="" className="w-10 h-10 rounded-full border-2 border-primary/20" />
-                            <div>
-                              <p className="text-sm font-bold text-text-heading">{bday.name}</p>
-                              <p className="text-[10px] text-text-sub uppercase tracking-widest font-black">{bday.role} • {bday.class}</p>
-                            </div>
-                            <div className="ml-auto text-primary">
-                              <Sparkles size={16} />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </Card>
-
-                    {/* School Calendar */}
-                    <Card className="p-6">
-                      <h3 className="text-lg font-black text-text-heading mb-6 flex items-center gap-2 uppercase tracking-tighter">
-                        <Calendar size={20} className="text-primary" />
-                        School Calendar
-                      </h3>
-                      <div className="space-y-4">
-                        {[
-                          { day: '28', month: 'MAR', event: 'Sports Day', type: 'Event' },
-                          { day: '29', month: 'MAR', event: 'Holi Holiday', type: 'Holiday' },
-                          { day: '05', month: 'APR', event: 'PTM Meeting', type: 'Meeting' }
-                        ].map((item, i) => (
-                          <div key={i} className="flex items-center gap-4">
-                            <div className="flex flex-col items-center justify-center w-12 h-12 rounded-xl bg-slate-50 border border-slate-100">
-                              <span className="text-xs font-black text-primary leading-none">{item.day}</span>
-                              <span className="text-[8px] font-black text-text-sub uppercase tracking-widest mt-0.5">{item.month}</span>
-                            </div>
-                            <div>
-                              <p className="text-xs font-black text-text-heading uppercase tracking-tighter">{item.event}</p>
-                              <p className="text-[9px] text-text-sub font-bold uppercase tracking-widest">{item.type}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </Card>
-                  </div>
-                </div>
-              </motion.div>
+              <Dashboard 
+                currentUser={currentUser}
+                attendance={attendance}
+                students={students}
+                masterData={masterData}
+                bankBalance={bankBalance}
+                cashBalance={cashBalance}
+                feeTransactions={feeTransactions}
+                contraEntries={contraEntries}
+                examSchedules={examSchedules}
+                examResults={examResults}
+                setView={setView}
+                formatDate={formatDate}
+              />
             )}
 
             {view === 'register-student' && (
@@ -11797,6 +12887,19 @@ export default function App() {
                         required 
                         value={formData.surname || ''}
                         onChange={(e: any) => setFormData({...formData, surname: e.target.value})} 
+                      />
+                      <Input 
+                        label="Roll Number" 
+                        placeholder="e.g. 101" 
+                        value={formData.rollNumber || ''}
+                        onChange={(e: any) => setFormData({...formData, rollNumber: e.target.value})} 
+                      />
+                      <Select 
+                        label="Student Type" 
+                        options={masterData.studentTypes} 
+                        required 
+                        value={formData.studentType || 'Old'}
+                        onChange={(e: any) => setFormData({...formData, studentType: e.target.value})} 
                       />
                       <Select 
                         label="Class" 
@@ -12340,6 +13443,7 @@ export default function App() {
                       <thead>
                         <tr className="text-left text-xs text-text-secondary uppercase border-b border-slate-100">
                           <th className="pb-4 font-bold">Student ID</th>
+                          <th className="pb-4 font-bold">Roll No</th>
                           <th className="pb-4 font-bold">Name</th>
                           <th className="pb-4 font-bold">Class</th>
                           <th className="pb-4 font-bold">QR Code</th>
@@ -12369,6 +13473,7 @@ export default function App() {
                           }).map((s) => (
                             <tr key={s.id} className="text-sm hover:bg-slate-50/50 transition-all">
                               <td className="py-4 font-mono text-xs text-primary font-bold">{s.studentId}</td>
+                              <td className="py-4 font-bold text-slate-600">{s.rollNumber || '-'}</td>
                               <td className="py-4">
                                 <div className="flex items-center gap-3">
                                   <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-bold overflow-hidden">
@@ -12379,6 +13484,11 @@ export default function App() {
                                     )}
                                   </div>
                                   <span className="font-semibold">{s.name} {s.surname}</span>
+                                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${
+                                    s.studentType === 'New' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                                  }`}>
+                                    {s.studentType}
+                                  </span>
                                 </div>
                               </td>
                               <td className="py-4">{s.class} - {s.section}</td>
@@ -12936,7 +14046,7 @@ export default function App() {
                   </div>
 
                   {/* Admin Only Settings */}
-                  {currentUser?.role === 'admin' ? (
+                  {currentUser?.role === 'admin' || currentUser?.role === 'super-admin' ? (
                     <div className="lg:col-span-2 space-y-8">
                       <Card>
                         <h3 className="text-lg font-bold mb-6 flex items-center gap-2 text-primary">
@@ -13267,6 +14377,10 @@ export default function App() {
                   setTeacherAssignments={setTeacherAssignments}
                   currentUser={currentUser}
                   showModal={showModal}
+                  setView={setView}
+                  setFormData={setFormData}
+                  setEditingStudentId={setEditingStudentId}
+                  setIsViewOnly={setIsViewOnly}
                 />
               </motion.div>
             )}
@@ -14603,7 +15717,7 @@ const IDCardsModule = ({
       <div className="space-y-10 text-xl leading-relaxed text-justify">
         <div className="flex justify-between font-bold text-text-secondary mb-12">
           <span>Ref: EXP/2024/{staff.id.split('-')[1]}</span>
-          <span>Date: {new Date().toLocaleDateString()}</span>
+          <span>Date: {formatDate(new Date())}</span>
         </div>
 
         <p>TO WHOM IT MAY CONCERN</p>
@@ -14612,7 +15726,7 @@ const IDCardsModule = ({
         working with <span className="font-black">{schoolProfile.name}</span> as a <span className="font-black border-b-2 border-slate-300 px-4">{staff.designation || staff.role}</span> in 
         the <span className="font-black border-b-2 border-slate-300 px-4">{staff.department || 'Academic'}</span> department from 
         <span className="font-black border-b-2 border-slate-300 px-4">{staff.joiningDate || '01/06/2021'}</span> to 
-        <span className="font-black border-b-2 border-slate-300 px-4">{new Date().toLocaleDateString()}</span>.</p>
+        <span className="font-black border-b-2 border-slate-300 px-4">{formatDate(new Date())}</span>.</p>
 
         <p>During his/her tenure, we found him/her to be hardworking, dedicated, and committed to his/her duties. 
         He/She possesses a good character and has been an asset to our institution.</p>
@@ -14814,7 +15928,7 @@ const IDCardsModule = ({
         <div className="grid grid-cols-2 gap-12 mt-32">
           <div>
             <p className="font-bold text-text-secondary uppercase text-xs mb-1">Date of Issue</p>
-            <p className="font-black text-text-heading">{new Date().toLocaleDateString()}</p>
+            <p className="font-black text-text-heading">{formatDate(new Date())}</p>
           </div>
           <div className="text-right">
             <div className="w-48 h-12 border-b-2 border-slate-300 ml-auto mb-2"></div>
@@ -15120,7 +16234,13 @@ const ExaminationModule = ({
   setReportCards
 }: any) => {
   const [activeTab, setActiveTab] = useState<'setup' | 'schedule' | 'marks' | 'report' | 'stats' | 'templates'>('setup');
+  const [reportFilters, setReportFilters] = useState({ class: '', section: '' });
   const [selectedReportStudent, setSelectedReportStudent] = useState<any>(null);
+
+  const filteredStudentsForReport = students.filter((s: any) => {
+    return (!reportFilters.class || s.class === reportFilters.class) &&
+           (!reportFilters.section || s.section === reportFilters.section);
+  });
   const [editingExamId, setEditingExamId] = useState<string | null>(null);
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
@@ -15154,6 +16274,7 @@ const ExaminationModule = ({
   });
 
   // Marks Entry Form
+  const [marksFilters, setMarksFilters] = useState({ class: '', section: '' });
   const [marksForm, setMarksForm] = useState<any>({});
 
   const handleAddExam = async () => {
@@ -15444,8 +16565,8 @@ const ExaminationModule = ({
           { id: 'templates', label: 'Templates', icon: Settings, adminOnly: true },
           { id: 'stats', label: 'Statistics', icon: BarChart3, adminOnly: true }
         ].filter(tab => {
-          if (tab.adminOnly && currentUser?.role !== 'admin') return false;
-          if (tab.teacherOnly && currentUser?.role !== 'admin' && currentUser?.role !== 'teacher') return false;
+          if (tab.adminOnly && currentUser?.role !== 'admin' && currentUser?.role !== 'super-admin') return false;
+          if (tab.teacherOnly && currentUser?.role !== 'admin' && currentUser?.role !== 'super-admin' && currentUser?.role !== 'teacher') return false;
           return true;
         }).map((tab) => (
           <button
@@ -15658,43 +16779,70 @@ const ExaminationModule = ({
         {activeTab === 'marks' && (
           <motion.div key="marks" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
             <Card>
-              <h3 className="text-lg font-bold mb-6 flex items-center gap-2 text-primary">
-                <FileEdit size={20} /> Enter Marks & Feedback
-              </h3>
-              <div className="space-y-8">
-                {examSchedules.map((s: any) => (
-                  <div key={s.id} className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
-                    <div className="mb-6">
-                      <h4 className="font-bold text-xl">{s.subject} ({s.class}-{s.section})</h4>
-                      <p className="text-sm text-text-sub">Exam: {exams.find(e => e.id === s.examId)?.name}</p>
-                    </div>
-                    
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="text-xs font-bold text-text-secondary uppercase tracking-wider border-b border-slate-200">
-                            <th className="pb-3 px-4">Student Name</th>
-                            <th className="pb-3 px-4 w-32">Marks (100)</th>
-                            <th className="pb-3 px-4">Feedback</th>
-                            <th className="pb-3 px-4 text-right">Action</th>
-                          </tr>
-                        </thead>
-                        <tbody className="text-sm">
-                          {students.filter((st: any) => st.class === s.class && st.section === s.section).map((student: any) => {
-                            const result = examResults.find((r: any) => r.examScheduleId === s.id && r.studentId === student.studentId);
-                            const currentData = marksForm[`${s.id}_${student.studentId}`] || { marks: result?.marks || '', feedback: result?.feedback || '' };
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+                <div>
+                  <h3 className="text-xl font-black text-text-heading">Enter Marks & Feedback</h3>
+                  <p className="text-sm text-text-sub">Select class and section to enter marks for students.</p>
+                </div>
+                <div className="flex flex-wrap gap-4">
+                  <div className="w-40">
+                    <Select 
+                      label="Class" 
+                      options={masterData.classes} 
+                      value={marksFilters.class}
+                      onChange={(e: any) => setMarksFilters({...marksFilters, class: e.target.value})}
+                    />
+                  </div>
+                  <div className="w-40">
+                    <Select 
+                      label="Section" 
+                      options={masterData.sections} 
+                      value={marksFilters.section}
+                      onChange={(e: any) => setMarksFilters({...marksFilters, section: e.target.value})}
+                    />
+                  </div>
+                </div>
+              </div>
 
-                            return (
-                              <tr key={student.studentId} className="border-b border-slate-100 last:border-0">
-                                <td className="py-4 px-4 font-medium">{student.name} {student.surname}</td>
-                                <td className="py-4 px-4">
-                                  <input 
-                                    type="number" 
-                                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
-                                    value={currentData.marks}
-                                    onChange={(e) => setMarksForm({...marksForm, [`${s.id}_${student.studentId}`]: { ...currentData, marks: e.target.value }})}
-                                  />
-                                </td>
+              <div className="space-y-8">
+                {examSchedules.filter((s: any) => (!marksFilters.class || s.class === marksFilters.class) && (!marksFilters.section || s.section === marksFilters.section)).length === 0 ? (
+                  <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                    <p className="text-text-sub italic">No exam schedules found for the selected filters.</p>
+                  </div>
+                ) : (
+                  examSchedules.filter((s: any) => (!marksFilters.class || s.class === marksFilters.class) && (!marksFilters.section || s.section === marksFilters.section)).map((s: any) => (
+                    <div key={s.id} className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
+                      <div className="mb-6">
+                        <h4 className="font-bold text-xl">{s.subject} ({s.class}-{s.section})</h4>
+                        <p className="text-sm text-text-sub">Exam: {exams.find(e => e.id === s.examId)?.name}</p>
+                      </div>
+                      
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="text-xs font-bold text-text-secondary uppercase tracking-wider border-b border-slate-200">
+                              <th className="pb-3 px-4">Student Name</th>
+                              <th className="pb-3 px-4 w-32">Marks (100)</th>
+                              <th className="pb-3 px-4">Feedback</th>
+                              <th className="pb-3 px-4 text-right">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="text-sm">
+                            {students.filter((st: any) => st.class === s.class && st.section === s.section).map((student: any) => {
+                              const result = examResults.find((r: any) => r.examScheduleId === s.id && r.studentId === student.studentId);
+                              const currentData = marksForm[`${s.id}_${student.studentId}`] || { marks: result?.marks || '', feedback: result?.feedback || '' };
+
+                              return (
+                                <tr key={student.studentId} className="border-b border-slate-100 last:border-0">
+                                  <td className="py-4 px-4 font-medium">{student.name} {student.surname}</td>
+                                  <td className="py-4 px-4">
+                                    <input 
+                                      type="number" 
+                                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                                      value={currentData.marks}
+                                      onChange={(e) => setMarksForm({...marksForm, [`${s.id}_${student.studentId}`]: { ...currentData, marks: e.target.value }})}
+                                    />
+                                  </td>
                                 <td className="py-4 px-4">
                                   <input 
                                     type="text" 
@@ -15730,7 +16878,7 @@ const ExaminationModule = ({
                       </table>
                     </div>
                   </div>
-                ))}
+                )))}
               </div>
             </Card>
           </motion.div>
@@ -15865,8 +17013,22 @@ const ExaminationModule = ({
                     <ClipboardList size={20} /> Generate Report Cards
                   </h3>
                   <div className="flex gap-4">
-                    <Select label="Class" options={masterData.classes} />
-                    <Select label="Section" options={masterData.sections} />
+                    <div className="w-40">
+                      <Select 
+                        label="Class" 
+                        options={masterData.classes} 
+                        value={reportFilters.class}
+                        onChange={(e: any) => setReportFilters({...reportFilters, class: e.target.value})}
+                      />
+                    </div>
+                    <div className="w-40">
+                      <Select 
+                        label="Section" 
+                        options={masterData.sections} 
+                        value={reportFilters.section}
+                        onChange={(e: any) => setReportFilters({...reportFilters, section: e.target.value})}
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -15881,16 +17043,27 @@ const ExaminationModule = ({
                       </tr>
                     </thead>
                     <tbody className="text-sm">
-                      {students.map((student: any) => {
-                        const reportCard = reportCards.find(rc => rc.studentId === student.studentId);
-                        return (
-                          <tr key={student.studentId} className="border-b border-slate-100 last:border-0">
-                            <td className="py-4 px-4">
-                              <div className="flex items-center gap-3">
-                                <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${student.studentId}`} className="w-8 h-8 rounded-full bg-slate-100" />
-                                <span className="font-medium">{student.name} {student.surname}</span>
-                              </div>
-                            </td>
+                      {filteredStudentsForReport.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="py-12 text-center text-text-sub italic">
+                            No students found. Please select class and section.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredStudentsForReport.map((student: any) => {
+                          const reportCard = reportCards.find(rc => rc.studentId === student.studentId);
+                          return (
+                            <tr key={student.studentId} className="border-b border-slate-100 last:border-0">
+                              <td className="py-4 px-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-primary font-bold text-xs">
+                                    {student.name[0]}{student.surname[0]}
+                                  </div>
+                                  <div>
+                                    <p className="font-medium text-text-heading">{student.name} {student.surname}</p>
+                                  </div>
+                                </div>
+                              </td>
                             <td className="py-4 px-4">{student.class}-{student.section}</td>
                             <td className="py-4 px-4">
                               {reportCard ? (
@@ -15935,7 +17108,7 @@ const ExaminationModule = ({
                             </td>
                           </tr>
                         );
-                      })}
+                      }))}
                     </tbody>
                   </table>
                 </div>

@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS students (
     
     -- Documents (Base64 or URLs)
     photo TEXT,
+    roll_number TEXT,
     aadhaar_card_doc TEXT,
     caste_certificate_doc TEXT,
     parents_docs TEXT,
@@ -167,8 +168,8 @@ CREATE TABLE IF NOT EXISTS staff_attendance (
 -- ==========================================
 
 CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY, -- User ID (e.g., admin, TCH-123, DS-123)
-    name TEXT NOT NULL,
+    username TEXT PRIMARY KEY, -- User ID (e.g., admin, TCH-123, DS-123)
+    name TEXT,
     password TEXT DEFAULT '12345678',
     role TEXT NOT NULL, -- admin, teacher, student, warden, super-admin, parent
     permissions TEXT[] DEFAULT '{}',
@@ -264,7 +265,6 @@ CREATE TABLE IF NOT EXISTS fee_collections (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     student_id TEXT NOT NULL,
     student_name TEXT,
-    roll_no TEXT,
     class TEXT,
     section TEXT,
     fee_type TEXT,
